@@ -3906,6 +3906,8 @@ const getSolicitudes = async (req, res) => {
       comentarios: clean(req.query.comentarios),
       comentario_CXP: clean(req.query.comentario_CXP),
 
+      
+
       // pag=pendiente → el SP recibe el centinela 'pendiente' para filtrar
       // los registros donde estatus_pagos sea 'enviado_a_pago' o NULL/vacío.
       // Cualquier otro valor se pasa directo como filtro de igualdad exacta.
@@ -3920,6 +3922,15 @@ const getSolicitudes = async (req, res) => {
       tipo_reserva_pago: clean(req.query.tipo_reserva_pago),
       pagos_parciales: clean(req.query.pagos_parciales),
       facturas_parciales: clean(req.query.facturas_parciales),
+
+      // ***  Estos filtros los agrego neft ***
+      canal_de_reservacion: clean(req.query.canal_de_reservacion),
+      nombre_intermediario: clean(req.query.nombre_intermediario),
+      forma_pago_solicitada: clean(req.query.forma_pago_solicitada),
+      comentario_AP: clean(req.query.comentario_AP),
+      reserva_diferencia: clean(req.query.reserva_diferencia),
+
+
     };
 
     const pagina = Math.max(
@@ -3959,6 +3970,7 @@ const getSolicitudes = async (req, res) => {
         filters.fecha_reserva_end,
         filters.filtrar_fecha_por_reserva,
 
+
         filters.comentarios,
         filters.comentario_CXP,
         filters.estatus_pagos, // p_estatus_pagos (pos 24)
@@ -3969,6 +3981,13 @@ const getSolicitudes = async (req, res) => {
         filters.facturas_parciales, // p_facturas_parciales
         pagina, // p_pagina
         limite, // p_limite
+
+
+        filters.canal_de_reservacion,
+        filters.nombre_intermediario,
+        filters.forma_pago_solicitada,
+        filters.comentario_AP,
+        filters.reserva_diferencia,
       ]),
     ]);
 
@@ -4287,7 +4306,13 @@ const getSolicitudes2 = async (req, res) => {
       fecha_emision_factura_start: clean(req.query.fecha_emision_factura_start),
       fecha_emision_factura_end:   clean(req.query.fecha_emision_factura_end),
       pag:                        Math.max(1, Number(req.query.pag ?? 1) || 1),
-      limite:                     Math.max(1, Number(req.query.limite ?? 50) || 50),
+      limite: Math.max(1, Number(req.query.limite ?? 50) || 50),
+      // Estas las agrego neft 
+      canal_de_reservacion: clean(req.query.canal_de_reservacion),
+      nombre_intermediario: clean(req.query.nombre_intermediario),
+      forma_pago_solicitada: clean(req.query.forma_pago_solicitada),
+      comentario_AP: clean(req.query.comentario_AP),
+      reserva_diferencia: clean(req.query.reserva_diferencia)
     };
 
     const bucketFiltro = clean(req.query.bucket);
@@ -4330,7 +4355,16 @@ const getSolicitudes2 = async (req, res) => {
         filters.fecha_emision_factura_end,
         filters.pag,
         filters.limite,
+
+        // ***** Estas las agrego neft *****
+        filters.canal_de_reservacion,
+        filters.nombre_intermediario,
+        filters.forma_pago_solicitada,
+        filters.comentario_ap ,
+        filters.reserva_diferencia  ,
         bucketFiltro ?? null,
+
+        // *****Estas las agrego neft*****
       ],
     );
 
@@ -4404,7 +4438,7 @@ const getSolicitudes2 = async (req, res) => {
           usuario_generador:      r.usuario_generador,
           comentarios:            r.comentarios,
           notas_internas:         r.notas_internas,
-          comentario_AP:          r.comentario_AP,
+          comentario_ap:          r.comentario_ap,
           estado_solicitud:       r.estado_solicitud,
           estado_facturacion:     r.estado_facturacion,
           estatus_pagos:          r.estatus_pagos,
