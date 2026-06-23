@@ -1,3 +1,4 @@
+// backend/api/v1/router/mia/pago_proveedor
 const router = require("express").Router();
 const controller = require("../../controller/pago_proveedor");
 const { TipoCambio } = require("../../controller/tipo_cambio");
@@ -17,6 +18,7 @@ router.get("/saldos",controller.saldos)
 router.get("/consultar_facturado",controller.consultar_facturado)
 router.post("/editProveedor",controller.editProveedores);
 router.get("/proveedores",controller.getProveedores);
+router.patch("/cuentas/:id/active", controller.updateCuentaActive);
 router.patch("/edit", controller.EditCampos)
 router.patch("/codigo-confirmacion", controller.editCodigoConfirmacion)
 router.post("/subir_factura",controller.cargarFactura);
