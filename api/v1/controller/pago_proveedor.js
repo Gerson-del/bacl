@@ -733,6 +733,7 @@ const createSolicitud = async (req, res) => {
     moneda,
     concepto,
     metodo_de_pago,
+    id_tarjeta,
     referencia_pago,
     nombre_pagador,
     rfc_pagador,
@@ -748,7 +749,7 @@ const createSolicitud = async (req, res) => {
     ?, ?, ?, ?, ?,
     ?, ?, ?, ?, ?,
     ?, ?, ?, ?, ?,
-    ?, ?, ?, ?
+    ?, ?, ?, ?, ?
   );
 `;
     const insertPagoProveedorCardSql = `
@@ -772,6 +773,7 @@ const createSolicitud = async (req, res) => {
     moneda,
     concepto,
     metodo_de_pago,
+    id_tarjeta,
     referencia_pago,
     nombre_pagador,
     rfc_pagador,
@@ -787,7 +789,7 @@ const createSolicitud = async (req, res) => {
     ?, ?, ?, ?, ?,
     ?, ?, ?, ?, ?,
     ?, ?, ?, ?, ?,
-    ?, ?, ?, ?
+    ?, ?, ?, ?, ?
   );
 `;
 
@@ -921,6 +923,7 @@ const createSolicitud = async (req, res) => {
                 ? `${fechaPago} ${horaPago}`
                 : fechaPago,
             monto: Number(it?.monto || 0),
+            id_tarjeta: it?.id_tarjeta ? String(it.id_tarjeta) : cardId,
           };
         })
         .filter(
@@ -968,6 +971,7 @@ const createSolicitud = async (req, res) => {
           moneda: monedaDB,
           concepto: conceptoBase,
           metodo_de_pago: formaPagoDB, // "link" o "card"
+          id_tarjeta: rows[i].id_tarjeta || null,
           referencia_pago: selectedCard ? String(selectedCard) : null,
           nombre_pagador: null,
           rfc_pagador: null,
@@ -1002,6 +1006,7 @@ const createSolicitud = async (req, res) => {
             common.moneda,
             common.concepto,
             common.metodo_de_pago,
+            common.id_tarjeta,
             common.referencia_pago,
             common.nombre_pagador,
             common.rfc_pagador,
@@ -1035,6 +1040,7 @@ const createSolicitud = async (req, res) => {
             common.moneda,
             common.concepto,
             common.metodo_de_pago,
+            common.id_tarjeta,
             common.referencia_pago,
             common.nombre_pagador,
             common.rfc_pagador,
