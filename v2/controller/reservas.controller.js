@@ -2734,7 +2734,15 @@ const get_reservasClient_by_id_agente = async (body) => {
 };
 
 const obtener = async (req, res) => {
-  let { page, length, finanzas = false, uuid_factura, uuid_recibido } = req.query;
+  let { // modificacion
+    page, 
+    length, 
+    finanzas = false, 
+    uuid_factura, 
+    uuid_recibido,
+    rfc_proveedor,
+    razon_social_proveedor, 
+  } = req.query;
   if (uuid_factura || uuid_recibido) finanzas = true;
   page = page ? Number(page) : null;
   length = length ? Number(length) : null;
@@ -2767,7 +2775,11 @@ const obtener = async (req, res) => {
     where.push(`vw.proveedor LIKE CONCAT('%', ?, '%')`);
     params.push(req.query.proveedor);
   }
-
+// ID proveedor
+  if (req.query.id_proveedor) {
+    where.push(`CAST(vw.id_proveedor AS CHAR) LIKE CONCAT('%', ?, '%')`);
+    params.push(req.query.id_proveedor);
+  }
   // Monto
   if (req.query.monto) {
     where.push(`vw.costo_total = ?`);
@@ -2820,6 +2832,17 @@ const obtener = async (req, res) => {
     where.push(`vw.metodo_pago = ?`);
     params.push(req.query.paymentMethod);
   }
+  // RFC proveedor modificacion
+  if (rfc_proveedor) {
+    where.push(`pdfp.rfc_proveedor LIKE CONCAT('%', ?, '%')`);
+   params.push(rfc_proveedor);
+  }
+
+  // Razón social proveedor
+  if (razon_social_proveedor) {
+    where.push(`pdfp.razon_social_proveedor LIKE CONCAT('%', ?, '%')`);
+    params.push(razon_social_proveedor);
+  }
 
   /* =========================
      FILTRO DE FECHA DINÁMICO
@@ -2869,28 +2892,57 @@ const obtener = async (req, res) => {
 
   const finanzasJoins = `LEFT JOIN items_facturas fi ON vw.id_relacion = fi.id_relacion LEFT JOIN facturas f ON fi.id_factura = f.id_factura
     left join vw_pagos_facturas_proveedores_detalle vp on vp.id_solicitud = vw.id_solicitud_proveedor`;
-
-  const sqlTotal = `
-    SELECT COUNT(DISTINCT vw.id_booking) AS total
-    FROM vw_new_reservas vw
-${finanzas ? finanzasJoins : ""}
-${whereSQL}${whereFinanzasSQL}
-  `;
-
-  const sqlData = `
-  SELECT
-  ${
-    finanzas
-      ? `vw.*, GROUP_CONCAT(DISTINCT f.uuid_factura ORDER BY f.uuid_factura SEPARATOR ', ') as uuid_factura, SUM(DISTINCT f.total) as total_factura, GROUP_CONCAT(DISTINCT vp.uuid_factura ORDER BY vp.uuid_factura SEPARATOR ', ') as uuid_recibido, SUM(vp.monto_facturado) as monto_facturado_factura_recibida`
-      : "vw.*"
-  }
-  FROM vw_new_reservas vw
-${finanzas ? finanzasJoins : ""}
-${whereSQL}${whereFinanzasSQL}
-${finanzas ? "GROUP BY vw.id_booking" : ""}
-  ORDER BY vw.created_at DESC
-  ${hasPagination ? `LIMIT ${length} OFFSET ${offset}` : ""}
+    // modificacion
+  const proveedorFiscalJoin = `
+  LEFT JOIN (
+    SELECT
+      rel.id_proveedor,
+      MAX(pdf.rfc) AS rfc_proveedor,
+      MAX(pdf.razon_social) AS razon_social_proveedor
+    FROM proveedores_datos_fiscales_relacion rel
+    LEFT JOIN proveedores_datos_fiscales pdf
+      ON pdf.id = rel.id_datos_fiscales
+    GROUP BY rel.id_proveedor
+  ) pdfp
+    ON pdfp.id_proveedor = vw.id_proveedor
 `;
+  
+// modificacion
+  const sqlTotal = `
+      SELECT COUNT(DISTINCT vw.id_booking) AS total
+      FROM vw_new_reservas vw
+      ${proveedorFiscalJoin}
+      ${finanzas ? finanzasJoins : ""}
+     ${whereSQL}${whereFinanzasSQL}
+    `;
+// modificacion
+  const sqlData = `
+    SELECT
+    ${
+      finanzas
+        ? `
+          vw.*,
+         GROUP_CONCAT(DISTINCT f. uuid_factura ORDER BY f.uuid_factura SEPARATOR ', ') as uuid_factura,
+         SUM(DISTINCT f.total) as total_factura,
+          GROUP_CONCAT(DISTINCT vp.uuid_factura ORDER BY vp.uuid_factura SEPARATOR ', ') as uuid_recibido,
+          SUM(vp.monto_facturado) as monto_facturado_factura_recibida,
+          MAX(pdfp.rfc_proveedor) AS rfc_proveedor,
+          MAX(pdfp.razon_social_proveedor) AS razon_social_proveedor
+        `
+        : `
+          vw.*,
+          pdfp.rfc_proveedor AS rfc_proveedor,
+          pdfp.razon_social_proveedor AS razon_social_proveedor
+        `
+    }
+    FROM vw_new_reservas vw
+    ${proveedorFiscalJoin}
+    ${finanzas ? finanzasJoins : ""}
+    ${whereSQL}${whereFinanzasSQL}
+    ${finanzas ? "GROUP BY vw.id_booking" : ""}
+    ORDER BY vw.created_at DESC
+    ${hasPagination ? `LIMIT ${length} OFFSET ${offset}` : ""}
+  `;
 
   try {
     const [dataRaw, [{ total }]] = await Promise.all([
