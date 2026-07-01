@@ -4,6 +4,7 @@ const {
   executeQuery,
   executeTransaction,
   runTransaction,
+  setAuditUser,
 } = require("../../../config/db");
 const { v4: uuidv4 } = require("uuid");
 const {
@@ -4629,7 +4630,684 @@ const saldo_a_favor = async (req, res) => {
     });
   }
 };
+const resumen_cxp = async (req, res) => {
+  try {
+    const {
+      id_proveedor,
+      proveedor,
+      rfc,
+      uuid_factura,
+      tipo_negociacion,
+      tipo_pago,
+      pag = 1,
+      limite = 50,
+    } = req.query;
+    const page = Math.max(Number(pag) || 1, 1);
+    const limit = Math.min(Math.max(Number(limite) || 50, 1), 100);
+    const offset = (page - 1) * limit;
 
+    const where = [];
+    const params = [];
+
+    if (id_proveedor) {
+      where.push("spp.id_proveedor = ?");
+      params.push(id_proveedor);
+    }
+
+    if (proveedor) {
+      where.push("p.proveedor LIKE CONCAT('%', ?, '%')");
+      params.push(proveedor);
+    }
+
+    if (rfc) {
+      where.push(`
+        EXISTS (
+          SELECT 1
+          FROM proveedores_datos_fiscales_relacion pdfr_busqueda
+          LEFT JOIN proveedores_datos_fiscales pdf_busqueda
+            ON pdf_busqueda.id = pdfr_busqueda.id_datos_fiscales
+          WHERE pdfr_busqueda.id_proveedor = spp.id_proveedor
+            AND pdfr_busqueda.active = 1
+            AND pdf_busqueda.rfc LIKE CONCAT('%', ?, '%')
+        )
+      `);
+
+      params.push(rfc);
+    }
+
+    if (uuid_factura) {
+      where.push(`
+        EXISTS (
+          SELECT 1
+          FROM vw_pagos_facturas_proveedores_detalle vf_busqueda
+          WHERE vf_busqueda.id_solicitud = spp.id_solicitud_proveedor
+            AND CONVERT(vf_busqueda.uuid_factura USING utf8mb4) COLLATE utf8mb4_unicode_ci
+              LIKE CONCAT('%', ?, '%')
+        )
+      `);
+
+      params.push(uuid_factura);
+    }
+
+    if (tipo_negociacion) {
+      where.push("p.negociacion LIKE CONCAT('%', ?, '%')");
+      params.push(tipo_negociacion);
+    }
+
+    if (tipo_pago) {
+      if (String(tipo_pago).toLowerCase() === "contado") {
+        where.push(`
+          (
+            LOWER(TRIM(COALESCE(p.tipo_pago, ''))) <> 'credito'
+            OR p.tipo_pago IS NULL
+          )
+        `);
+      } else {
+        where.push("LOWER(TRIM(COALESCE(p.tipo_pago, ''))) = LOWER(TRIM(?))");
+        params.push(tipo_pago);
+      }
+    }
+
+    const whereSQL = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+    const sqlBase = `
+      WITH pagos_por_solicitud AS (
+        SELECT
+          id_solicitud_proveedor,
+          SUM(COALESCE(monto_pagado, 0)) AS monto_pagado,
+          MAX(fecha_pago) AS ultima_fecha_pago
+        FROM pago_proveedores
+        GROUP BY id_solicitud_proveedor
+      ),
+
+      saldo_a_favor_por_proveedor AS (
+        SELECT
+          CAST(id_proveedor AS UNSIGNED) AS id_proveedor,
+          SUM(COALESCE(restante, 0)) AS saldo_a_favor
+        FROM saldos
+        WHERE restante > 0
+          AND estado <> 'cancelled'
+        GROUP BY CAST(id_proveedor AS UNSIGNED)
+      ),
+
+      cuentas_revision AS (
+        SELECT
+          id_proveedor,
+          SUM(CASE WHEN revision_pendiente = 1 THEN 1 ELSE 0 END) AS cuentas_revision
+        FROM proveedores_cuentas
+        GROUP BY id_proveedor
+      ),
+
+      fiscal_proveedor AS (
+        SELECT
+          principal.id_proveedor,
+          principal.rfc,
+          principal.razon_social,
+          todos.total_rfcs,
+          todos.fiscales_json
+        FROM (
+          SELECT
+            pdfr.id_proveedor,
+            pdf.rfc,
+            pdf.razon_social
+          FROM proveedores_datos_fiscales_relacion pdfr
+          LEFT JOIN proveedores_datos_fiscales pdf
+            ON pdf.id = pdfr.id_datos_fiscales
+          INNER JOIN (
+            SELECT
+              id_proveedor,
+              MIN(id_datos_fiscales) AS id_datos_fiscales
+            FROM proveedores_datos_fiscales_relacion
+            WHERE active = 1
+            GROUP BY id_proveedor
+          ) base
+            ON base.id_proveedor = pdfr.id_proveedor
+          AND base.id_datos_fiscales = pdfr.id_datos_fiscales
+          WHERE pdfr.active = 1
+        ) principal
+        LEFT JOIN (
+          SELECT
+            pdfr.id_proveedor,
+            COUNT(DISTINCT pdfr.id_datos_fiscales) AS total_rfcs,
+            JSON_ARRAYAGG(
+              JSON_OBJECT(
+                'rfc', pdf.rfc,
+                'razon_social', pdf.razon_social
+              )
+            ) AS fiscales_json
+          FROM proveedores_datos_fiscales_relacion pdfr
+          LEFT JOIN proveedores_datos_fiscales pdf
+            ON pdf.id = pdfr.id_datos_fiscales
+          WHERE pdfr.active = 1
+          GROUP BY pdfr.id_proveedor
+        ) todos
+          ON todos.id_proveedor = principal.id_proveedor
+      ),
+
+      facturas_por_proveedor AS (
+        SELECT
+          base.id_proveedor,
+          MIN(base.uuid_factura) AS uuid_factura,
+          COUNT(*) AS total_uuids,
+          JSON_ARRAYAGG(
+            JSON_OBJECT(
+              'uuid', base.uuid_factura
+            )
+          ) AS uuid_facturas_json
+        FROM (
+          SELECT DISTINCT
+            sppf.id_proveedor,
+            CONVERT(vf.uuid_factura USING utf8mb4) AS uuid_factura
+          FROM solicitudes_pago_proveedor sppf
+          INNER JOIN vw_pagos_facturas_proveedores_detalle vf
+            ON vf.id_solicitud = sppf.id_solicitud_proveedor
+          WHERE vf.uuid_factura IS NOT NULL
+            AND TRIM(CONVERT(vf.uuid_factura USING utf8mb4)) <> ''
+        ) base
+        GROUP BY base.id_proveedor
+      )
+
+      SELECT
+        spp.id_proveedor,
+
+        COALESCE(p.proveedor, 'SIN PROVEEDOR') AS proveedor,
+        fp.rfc,
+        fp.razon_social,
+        fp.total_rfcs,
+        fp.fiscales_json,
+
+        fpp.uuid_factura,
+        COALESCE(fpp.total_uuids, 0) AS total_uuids,
+        fpp.uuid_facturas_json,
+
+        p.type AS tipo_proveedor,
+        p.tipo_pago,
+        p.vencimiento_credito AS plazo_credito,
+        p.negociacion AS tipo_negociacion,
+        p.estatus AS estatus_proveedor,
+
+        COUNT(*) AS total_solicitudes,
+
+        SUM(
+          CASE
+            WHEN UPPER(TRIM(COALESCE(spp.estado_solicitud, ''))) IN (
+              'SOLICITADA',
+              'CUPON ENVIADO',
+              'CARTA_ENVIADA'
+            )
+            THEN 1 ELSE 0
+          END
+        ) AS pendientes,
+
+        SUM(
+          CASE
+            WHEN UPPER(TRIM(COALESCE(spp.estado_solicitud, ''))) IN (
+              'TRANSFERENCIA_SOLICITADA',
+              'DISPERSION'
+            )
+            THEN 1 ELSE 0
+          END
+        ) AS en_dispersion,
+
+        SUM(
+          CASE
+            WHEN UPPER(TRIM(COALESCE(spp.estado_solicitud, ''))) IN (
+              'PAGADO TARJETA',
+              'PAGADO TRANSFERENCIA',
+              'PAGADO LINK'
+            )
+            THEN 1 ELSE 0
+          END
+        ) AS pagadas,
+
+        SUM(
+          CASE
+            WHEN UPPER(TRIM(COALESCE(spp.estado_solicitud, ''))) = 'CANCELADA'
+            THEN 1 ELSE 0
+          END
+        ) AS canceladas,
+
+        SUM(COALESCE(spp.monto_solicitado, 0)) AS monto_solicitado,
+        SUM(COALESCE(pp.monto_pagado, 0)) AS monto_pagado,
+        SUM(COALESCE(spp.saldo, 0)) AS saldo_pendiente,
+
+        SUM(COALESCE(spp.monto_facturado, 0)) AS total_facturado,
+        SUM(COALESCE(spp.monto_por_facturar, 0)) AS pendiente_factura,
+
+        SUM(
+          CASE
+            WHEN COALESCE(spp.monto_por_facturar, 0) > 0
+            THEN 1 ELSE 0
+          END
+        ) AS sin_factura_proveedor,
+
+        COALESCE(MAX(saf.saldo_a_favor), 0) AS saldo_a_favor,
+        COALESCE(MAX(cr.cuentas_revision), 0) AS revision_cuenta,
+
+        MAX(spp.fecha_solicitud) AS ultima_solicitud
+
+      FROM solicitudes_pago_proveedor spp
+
+      LEFT JOIN proveedores p
+        ON p.id = spp.id_proveedor
+
+      LEFT JOIN pagos_por_solicitud pp
+        ON pp.id_solicitud_proveedor = spp.id_solicitud_proveedor
+
+      LEFT JOIN saldo_a_favor_por_proveedor saf
+        ON saf.id_proveedor = spp.id_proveedor
+
+      LEFT JOIN cuentas_revision cr
+        ON cr.id_proveedor = spp.id_proveedor
+
+      LEFT JOIN fiscal_proveedor fp
+        ON fp.id_proveedor = spp.id_proveedor
+
+      LEFT JOIN facturas_por_proveedor fpp
+        ON fpp.id_proveedor = spp.id_proveedor
+
+      ${whereSQL}
+
+      GROUP BY
+        spp.id_proveedor,
+        p.proveedor,
+        fp.rfc,
+        fp.razon_social,
+        fp.total_rfcs,
+        fp.fiscales_json,
+        fpp.uuid_factura,
+        fpp.total_uuids,
+        fpp.uuid_facturas_json,
+        p.type,
+        p.tipo_pago,
+        p.vencimiento_credito,
+        p.negociacion,
+        p.estatus
+    `;
+const sqlData = `
+  SELECT *
+  FROM (${sqlBase}) resumen
+  ORDER BY saldo_pendiente DESC, monto_solicitado DESC
+  LIMIT ${limit} OFFSET ${offset};
+`;
+
+const sqlTotales = `
+  SELECT
+    COUNT(*) AS total_proveedores,
+
+    SUM(total_solicitudes) AS total_solicitudes,
+    SUM(pendientes) AS pendientes,
+    SUM(en_dispersion) AS en_dispersion,
+    SUM(pagadas) AS pagadas,
+    SUM(canceladas) AS canceladas,
+
+    SUM(monto_solicitado) AS monto_solicitado,
+    SUM(monto_pagado) AS monto_pagado,
+    SUM(saldo_pendiente) AS saldo_pendiente,
+
+    SUM(total_facturado) AS total_facturado,
+    SUM(pendiente_factura) AS pendiente_factura,
+    SUM(saldo_a_favor) AS saldo_a_favor,
+
+    SUM(revision_cuenta) AS revision_cuenta,
+    SUM(sin_factura_proveedor) AS sin_factura_proveedor,
+
+    SUM(
+      CASE
+        WHEN LOWER(TRIM(COALESCE(tipo_pago, ''))) = 'credito'
+        THEN 1 ELSE 0
+      END
+    ) AS proveedores_credito,
+
+    SUM(
+      CASE
+        WHEN LOWER(TRIM(COALESCE(tipo_pago, ''))) <> 'credito'
+          OR tipo_pago IS NULL
+        THEN 1 ELSE 0
+      END
+    ) AS proveedores_contado,
+
+    SUM(
+      CASE
+        WHEN LOWER(TRIM(COALESCE(tipo_pago, ''))) = 'credito'
+        THEN total_solicitudes ELSE 0
+      END
+    ) AS solicitudes_credito,
+
+    SUM(
+      CASE
+        WHEN LOWER(TRIM(COALESCE(tipo_pago, ''))) <> 'credito'
+          OR tipo_pago IS NULL
+        THEN total_solicitudes ELSE 0
+      END
+    ) AS solicitudes_contado,
+
+    SUM(
+      CASE
+        WHEN LOWER(TRIM(COALESCE(tipo_pago, ''))) = 'credito'
+        THEN monto_solicitado ELSE 0
+      END
+    ) AS monto_credito,
+
+    SUM(
+      CASE
+        WHEN LOWER(TRIM(COALESCE(tipo_pago, ''))) <> 'credito'
+          OR tipo_pago IS NULL
+        THEN monto_solicitado ELSE 0
+      END
+    ) AS monto_contado
+
+  FROM (${sqlBase}) resumen;
+`;
+
+const data = await executeQuery(sqlData, params);
+const totalsRows = await executeQuery(sqlTotales, params);
+
+const totals = totalsRows?.[0] || {};
+const total = Number(totals.total_proveedores || 0);
+
+return res.status(200).json({
+  ok: true,
+  message: "Resumen CXP obtenido con éxito",
+  data,
+  totals,
+  metadata: {
+    page,
+    limit,
+    total,
+    total_pages: Math.ceil(total / limit),
+  },
+});
+  } catch (error) {
+    console.error("Error en resumen_cxp:", error);
+    return res.status(500).json({
+      ok: false,
+      message: "Error al obtener resumen CXP",
+      error: error?.message || error,
+    });
+  }
+};
+const detalle_cxp = async (req, res) => {
+  try {
+    const {
+      id_proveedor,
+      tipo_detalle = "total",
+      proveedor,
+      rfc,
+      uuid_factura,
+      tipo_negociacion,
+      tipo_pago,
+    } = req.query;
+
+    if (!id_proveedor) {
+      return res.status(400).json({
+        ok: false,
+        message: "El id_proveedor es requerido",
+      });
+    }
+
+    const tipo = String(tipo_detalle || "total").toLowerCase();
+
+    const tiposPermitidos = [
+      "facturas",
+      "total",
+      "pendientes",
+      "en_dispersion",
+      "pagadas",
+      "canceladas",
+    ];
+
+    if (!tiposPermitidos.includes(tipo)) {
+      return res.status(400).json({
+        ok: false,
+        message: "Tipo de detalle no válido",
+      });
+    }
+    const filtrosFacturas = [];
+    const paramsFacturas = [id_proveedor];
+
+    const filtrosSolicitudes = [];
+    const paramsSolicitudes = [id_proveedor];
+
+    if (proveedor) {
+      filtrosFacturas.push("AND p.proveedor LIKE CONCAT('%', ?, '%')");
+      paramsFacturas.push(proveedor);
+
+      filtrosSolicitudes.push("AND p.proveedor LIKE CONCAT('%', ?, '%')");
+      paramsSolicitudes.push(proveedor);
+    }
+
+    if (rfc) {
+      const filtroRfc = `
+        AND EXISTS (
+          SELECT 1
+          FROM proveedores_datos_fiscales_relacion pdfr_busqueda
+          LEFT JOIN proveedores_datos_fiscales pdf_busqueda
+            ON pdf_busqueda.id = pdfr_busqueda.id_datos_fiscales
+          WHERE pdfr_busqueda.id_proveedor = spp.id_proveedor
+            AND pdfr_busqueda.active = 1
+            AND pdf_busqueda.rfc LIKE CONCAT('%', ?, '%')
+        )
+      `;
+
+      filtrosFacturas.push(filtroRfc);
+      paramsFacturas.push(rfc);
+
+      filtrosSolicitudes.push(filtroRfc);
+      paramsSolicitudes.push(rfc);
+    }
+
+    if (uuid_factura) {
+      filtrosFacturas.push(`
+        AND CONVERT(vf.uuid_factura USING utf8mb4) COLLATE utf8mb4_unicode_ci
+          LIKE CONCAT('%', ?, '%')
+      `);
+      paramsFacturas.push(uuid_factura);
+
+      filtrosSolicitudes.push(`
+        AND EXISTS (
+          SELECT 1
+          FROM vw_pagos_facturas_proveedores_detalle vf_busqueda
+          WHERE vf_busqueda.id_solicitud = spp.id_solicitud_proveedor
+            AND CONVERT(vf_busqueda.uuid_factura USING utf8mb4) COLLATE utf8mb4_unicode_ci
+              LIKE CONCAT('%', ?, '%')
+        )
+      `);
+      paramsSolicitudes.push(uuid_factura);
+    }
+
+    if (tipo_negociacion) {
+      filtrosFacturas.push("AND p.negociacion LIKE CONCAT('%', ?, '%')");
+      paramsFacturas.push(tipo_negociacion);
+
+      filtrosSolicitudes.push("AND p.negociacion LIKE CONCAT('%', ?, '%')");
+      paramsSolicitudes.push(tipo_negociacion);
+    }
+
+    if (tipo_pago) {
+      if (String(tipo_pago).toLowerCase() === "contado") {
+        const filtroContado = `
+          AND (
+            LOWER(TRIM(COALESCE(p.tipo_pago, ''))) <> 'credito'
+            OR p.tipo_pago IS NULL
+          )
+        `;
+
+        filtrosFacturas.push(filtroContado);
+        filtrosSolicitudes.push(filtroContado);
+      } else {
+        filtrosFacturas.push(
+          "AND LOWER(TRIM(COALESCE(p.tipo_pago, ''))) = LOWER(TRIM(?))",
+        );
+        paramsFacturas.push(tipo_pago);
+
+        filtrosSolicitudes.push(
+          "AND LOWER(TRIM(COALESCE(p.tipo_pago, ''))) = LOWER(TRIM(?))",
+        );
+        paramsSolicitudes.push(tipo_pago);
+      }
+    }
+
+    const filtrosFacturasSQL = filtrosFacturas.join("\n");
+    const filtrosSolicitudesSQL = filtrosSolicitudes.join("\n");
+
+    if (tipo === "facturas") {
+      const sqlFacturas = `
+        SELECT DISTINCT
+          CONVERT(vf.uuid_factura USING utf8mb4) AS uuid_factura,
+
+          vf.id_solicitud,
+
+          spp.id_solicitud_proveedor,
+          spp.id_proveedor,
+          p.proveedor,
+
+          spp.monto_solicitado,
+          spp.monto_facturado,
+          spp.monto_por_facturar,
+          spp.saldo,
+
+          spp.estado_solicitud,
+          spp.estado_facturacion,
+          spp.estatus_pagos,
+          spp.forma_pago_solicitada,
+          spp.fecha_solicitud
+
+        FROM vw_pagos_facturas_proveedores_detalle vf
+
+        INNER JOIN solicitudes_pago_proveedor spp
+          ON spp.id_solicitud_proveedor = vf.id_solicitud
+
+        LEFT JOIN proveedores p
+          ON p.id = spp.id_proveedor
+
+        WHERE spp.id_proveedor = ?
+      AND vf.uuid_factura IS NOT NULL
+      AND TRIM(CONVERT(vf.uuid_factura USING utf8mb4)) <> ''
+      ${filtrosFacturasSQL}
+        ORDER BY spp.fecha_solicitud DESC, spp.id_solicitud_proveedor DESC
+
+        LIMIT 500;
+      `;
+
+      const data = await executeQuery(sqlFacturas, paramsFacturas);
+
+      return res.status(200).json({
+        ok: true,
+        message: "Detalle de facturas CXP obtenido con éxito",
+        tipo_detalle: tipo,
+        data,
+      });
+    }
+
+    let estadoSQL = "";
+
+    if (tipo === "pendientes") {
+      estadoSQL = `
+        AND UPPER(TRIM(COALESCE(spp.estado_solicitud, ''))) IN (
+          'SOLICITADA',
+          'CUPON ENVIADO',
+          'CARTA_ENVIADA'
+        )
+      `;
+    }
+
+    if (tipo === "en_dispersion") {
+      estadoSQL = `
+        AND UPPER(TRIM(COALESCE(spp.estado_solicitud, ''))) IN (
+          'TRANSFERENCIA_SOLICITADA',
+          'DISPERSION'
+        )
+      `;
+    }
+
+    if (tipo === "pagadas") {
+      estadoSQL = `
+        AND UPPER(TRIM(COALESCE(spp.estado_solicitud, ''))) IN (
+          'PAGADO TARJETA',
+          'PAGADO TRANSFERENCIA',
+          'PAGADO LINK'
+        )
+      `;
+    }
+
+    if (tipo === "canceladas") {
+      estadoSQL = `
+        AND UPPER(TRIM(COALESCE(spp.estado_solicitud, ''))) = 'CANCELADA'
+      `;
+    }
+
+    const sqlSolicitudes = `
+      WITH facturas_solicitud AS (
+        SELECT
+          vf.id_solicitud,
+          MIN(CONVERT(vf.uuid_factura USING utf8mb4)) AS uuid_factura,
+          COUNT(DISTINCT CONVERT(vf.uuid_factura USING utf8mb4)) AS total_uuids,
+          JSON_ARRAYAGG(
+            JSON_OBJECT(
+              'uuid', CONVERT(vf.uuid_factura USING utf8mb4)
+            )
+          ) AS uuid_facturas_json
+        FROM vw_pagos_facturas_proveedores_detalle vf
+        WHERE vf.uuid_factura IS NOT NULL
+          AND TRIM(CONVERT(vf.uuid_factura USING utf8mb4)) <> ''
+        GROUP BY vf.id_solicitud
+      )
+
+      SELECT
+        spp.id_solicitud_proveedor,
+        spp.id_proveedor,
+        p.proveedor,
+
+        spp.monto_solicitado,
+        spp.monto_facturado,
+        spp.monto_por_facturar,
+        spp.saldo,
+
+        spp.estado_solicitud,
+        spp.estado_facturacion,
+        spp.estatus_pagos,
+        spp.forma_pago_solicitada,
+        spp.fecha_solicitud,
+
+        fs.uuid_factura,
+        COALESCE(fs.total_uuids, 0) AS total_uuids,
+        fs.uuid_facturas_json
+
+      FROM solicitudes_pago_proveedor spp
+
+      LEFT JOIN proveedores p
+        ON p.id = spp.id_proveedor
+
+      LEFT JOIN facturas_solicitud fs
+        ON fs.id_solicitud = spp.id_solicitud_proveedor
+
+      WHERE spp.id_proveedor = ?
+      ${estadoSQL}
+      ${filtrosSolicitudesSQL}
+
+      ORDER BY spp.fecha_solicitud DESC, spp.id_solicitud_proveedor DESC
+
+      LIMIT 500;
+    `;
+
+    const data = await executeQuery(sqlSolicitudes, paramsSolicitudes);
+
+    return res.status(200).json({
+      ok: true,
+      message: "Detalle CXP obtenido con éxito",
+      tipo_detalle: tipo,
+      data,
+    });
+  } catch (error) {
+    console.error("Error en detalle_cxp:", error);
+    return res.status(500).json({
+      ok: false,
+      message: "Error al obtener detalle CXP",
+      error: error?.message || error,
+    });
+  }
+};
 const saldos = async (req, res) => {
   try {
     const { id_proveedor } = req.query; // puede venir undefined
@@ -9041,24 +9719,210 @@ const cancelar_dispersion = async (req, res) => {
     });
   }
 };
+// back/api/v1/controller/pago_proveedor.js
 const updateCuentaActive = async (req, res) => {
-  const { id } = req.params;
-  const { active } = req.body;
+  try {
+    const { id } = req.params;
+    const { active } = req.body;
 
-  await executeQuery(
-    `UPDATE proveedores_cuentas 
-     SET active = ?
-     WHERE id = ?`,
-    [active, id]
-  );
+    const user =
+      req.user ||
+      req.usuario ||
+      req.session?.user ||
+      req.body?.user ||
+      null;
 
-  return res.status(200).json({
-    message: active === 1 ? "Cuenta activada" : "Cuenta desactivada",
-    data: { id: Number(id), active },
-  });
+    const activeValue =
+      active === true || active === 1 || active === "1" ? 1 : 0;
+
+    await runTransaction(async (conn) => {
+      await setAuditUser(conn, user);
+
+      await conn.execute(
+        `
+        UPDATE proveedores_cuentas
+        SET active = ?
+        WHERE id = ?
+        `,
+        [activeValue, id],
+      );
+    });
+
+    return res.status(200).json({
+      message: activeValue === 1 ? "Cuenta activada" : "Cuenta desactivada",
+      data: {
+        id: Number(id),
+        active: activeValue,
+      },
+    });
+  } catch (error) {
+    console.error("Error en updateCuentaActive:", error);
+
+    return res.status(500).json({
+      message: "Error al actualizar estatus de la cuenta",
+      error: error?.message || error,
+    });
+  }
 };
+const getHistorialCuentaProveedor = async (req, res) => {
+  try {
+    const { id } = req.params;
 
+    if (!id) {
+      return res.status(400).json({
+        ok: false,
+        message: "Falta id_proveedor_cuenta",
+      });
+    }
+
+    const historial = await executeQuery(
+      `
+      SELECT
+        h.id,
+        h.id_proveedor_cuenta,
+        h.numero_cambio,
+        h.campo,
+        h.valor_anterior,
+        h.valor_nuevo,
+        h.accion,
+        h.id_usuario,
+        h.nombre_usuario,
+        h.fecha
+      FROM proveedores_cuentas_historial h
+      WHERE h.id_proveedor_cuenta = ?
+      ORDER BY h.fecha DESC, h.id DESC
+      LIMIT 20
+      `,
+      [id],
+    );
+
+    return res.status(200).json({
+      ok: true,
+      data: historial,
+    });
+  } catch (error) {
+    console.error("Error en getHistorialCuentaProveedor:", error);
+
+    return res.status(500).json({
+      ok: false,
+      message: "Error al obtener historial de cuenta",
+      error: error?.message || error,
+    });
+  }
+};
+const aprobarRevisionCuentaProveedor = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const user =
+      req.user ||
+      req.usuario ||
+      req.session?.user ||
+      req.body?.user ||
+      null;
+
+    if (!id) {
+      return res.status(400).json({
+        ok: false,
+        message: "Falta id_proveedor_cuenta",
+      });
+    }
+
+    let yaAprobada = false;
+
+    await runTransaction(async (conn) => {
+      await setAuditUser(conn, user);
+
+      const [cuentas] = await conn.execute(
+        `
+        SELECT
+          id,
+          revision_pendiente
+        FROM proveedores_cuentas
+        WHERE id = ?
+        LIMIT 1
+        FOR UPDATE
+        `,
+        [id],
+      );
+
+      if (!cuentas.length) {
+        const error = new Error("No se encontró la cuenta del proveedor");
+        error.statusCode = 404;
+        throw error;
+      }
+
+      const cuenta = cuentas[0];
+
+      if (Number(cuenta.revision_pendiente || 0) === 0) {
+        yaAprobada = true;
+        return;
+      }
+
+      await conn.execute(
+        `
+        UPDATE proveedores_cuentas
+        SET revision_pendiente = 0
+        WHERE id = ?
+        `,
+        [id],
+      );
+
+      await conn.execute(
+        `
+        INSERT INTO proveedores_cuentas_historial (
+          id_proveedor_cuenta,
+          numero_cambio,
+          campo,
+          valor_anterior,
+          valor_nuevo,
+          accion,
+          id_usuario,
+          nombre_usuario
+        )
+        VALUES (
+          ?,
+          (
+            SELECT COALESCE(MAX(h.numero_cambio), 0) + 1
+            FROM proveedores_cuentas_historial h
+            WHERE h.id_proveedor_cuenta = ?
+          ),
+          'revision_pendiente',
+          ?,
+          '0',
+          'APROBAR_CUENTA',
+          @usuario_actual,
+          @nombre_usuario_actual
+        )
+        `,
+        [id, id, String(cuenta.revision_pendiente ?? 1)],
+      );
+    });
+
+    return res.status(200).json({
+      ok: true,
+      message: yaAprobada
+        ? "La cuenta ya estaba aprobada"
+        : "Cuenta aprobada correctamente",
+      data: {
+        id_proveedor_cuenta: Number(id),
+        revision_pendiente: 0,
+      },
+    });
+  } catch (error) {
+    console.error("Error en aprobarRevisionCuentaProveedor:", error);
+
+    return res.status(error.statusCode || 500).json({
+      ok: false,
+      message: error?.message || "Error al aprobar cuenta",
+    });
+  }
+};
 module.exports = {
+  aprobarRevisionCuentaProveedor,
+  getHistorialCuentaProveedor,
+  resumen_cxp,
+  detalle_cxp,
   updateCuentaActive,
   devolverMontoFacturadoAFacturasPorCancelacion,
   createSolicitud,

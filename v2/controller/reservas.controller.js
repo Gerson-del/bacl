@@ -1307,7 +1307,9 @@ async function procesarSolicitudProveedorAlEditarReserva({
 
     const solicitud = rowsSolicitud[0];
     const estadoAnterior = String(solicitud.estado_solicitud || "").trim();
-    const estatusPagos   = String(solicitud.estatus_pagos   || "").trim().toUpperCase();
+    const estatusPagos = String(solicitud.estatus_pagos || "")
+      .trim()
+      .toUpperCase();
 
     // ── Clasificar caso ───────────────────────────────────────────────────────
     const ESTADO_UPPER = estadoAnterior.toUpperCase();
@@ -1316,9 +1318,7 @@ async function procesarSolicitudProveedorAlEditarReserva({
       caso = "CANCELADA";
     } else if (ESTADO_UPPER === "DISPERSION" || ESTADO_UPPER === "DISPERSADO") {
       caso = "DISPERSION";
-    } else if (
-      ESTADO_UPPER === "PAGADO TRANSFERENCIA"
-    ) {
+    } else if (ESTADO_UPPER === "PAGADO TRANSFERENCIA") {
       caso = "PAGADO";
     } else if (
       ESTADO_UPPER === "CUPON ENVIADO" ||
@@ -1367,7 +1367,9 @@ async function procesarSolicitudProveedorAlEditarReserva({
           id_solicitud_proveedor,
         ],
       );
-      paso("is_ajuste marcado — solicitud NO cancelada, requiere revisión manual");
+      paso(
+        "is_ajuste marcado — solicitud NO cancelada, requiere revisión manual",
+      );
       resultados.push({
         ok: true,
         action: "DISPERSION_FLAGGED_FOR_REVIEW",
@@ -1425,8 +1427,7 @@ async function procesarSolicitudProveedorAlEditarReserva({
 
       paso("Suma de pagos calculada", { monto_pagado_total });
 
-      const aptoParaSaldo =
-        caso === "PAGADO" || estatusPagos === "PAGADA";
+      const aptoParaSaldo = caso === "PAGADO" || estatusPagos === "PAGADA";
 
       paso("Evaluación: ¿apto para crear saldo a favor?", {
         caso,
@@ -1674,10 +1675,14 @@ const editar_reserva_definitivo = async (req, res) => {
         console.error("[notificado] error background:", err?.message ?? err),
       );
       const hayCambioProveedor = hasCostoProveedorChange(proveedor);
-      console.log("🔎 [EDITAR_RESERVA] hayCambioProveedor:", hayCambioProveedor, {
-        before: proveedor?.before?.total,
-        current: proveedor?.current?.total,
-      });
+      console.log(
+        "🔎 [EDITAR_RESERVA] hayCambioProveedor:",
+        hayCambioProveedor,
+        {
+          before: proveedor?.before?.total,
+          current: proveedor?.current?.total,
+        },
+      );
 
       const resultadoSolicitud =
         await procesarSolicitudProveedorAlEditarReserva({
@@ -1695,7 +1700,9 @@ const editar_reserva_definitivo = async (req, res) => {
 
       // Si cambió el código de confirmación, registrarlo en comentario_sistema de la solicitud
       const codigoAntes = String(codigo_reservacion_hotel?.before ?? "").trim();
-      const codigoDespues = String(codigo_reservacion_hotel?.current ?? "").trim();
+      const codigoDespues = String(
+        codigo_reservacion_hotel?.current ?? "",
+      ).trim();
       if (codigoAntes && codigoDespues && codigoAntes !== codigoDespues) {
         const msgCodigoCambiado = `Código de confirmación actualizado de "${codigoAntes}" a "${codigoDespues}". Usuario: ${id_user}.`;
         await connection.execute(
@@ -2734,14 +2741,15 @@ const get_reservasClient_by_id_agente = async (body) => {
 };
 
 const obtener = async (req, res) => {
-  let { // modificacion
-    page, 
-    length, 
-    finanzas = false, 
-    uuid_factura, 
+  let {
+    // modificacion
+    page,
+    length,
+    finanzas = false,
+    uuid_factura,
     uuid_recibido,
     rfc_proveedor,
-    razon_social_proveedor, 
+    razon_social_proveedor,
   } = req.query;
   if (uuid_factura || uuid_recibido) finanzas = true;
   page = page ? Number(page) : null;
@@ -2775,7 +2783,7 @@ const obtener = async (req, res) => {
     where.push(`vw.proveedor LIKE CONCAT('%', ?, '%')`);
     params.push(req.query.proveedor);
   }
-// ID proveedor
+  // ID proveedor
   if (req.query.id_proveedor) {
     where.push(`CAST(vw.id_proveedor AS CHAR) LIKE CONCAT('%', ?, '%')`);
     params.push(req.query.id_proveedor);
@@ -2834,13 +2842,33 @@ const obtener = async (req, res) => {
   }
   // RFC proveedor modificacion
   if (rfc_proveedor) {
-    where.push(`pdfp.rfc_proveedor LIKE CONCAT('%', ?, '%')`);
-   params.push(rfc_proveedor);
+    where.push(`
+      EXISTS (
+        SELECT 1
+        FROM proveedores_datos_fiscales_relacion rel_rfc
+        LEFT JOIN proveedores_datos_fiscales pdf_rfc
+          ON pdf_rfc.id = rel_rfc.id_datos_fiscales
+        WHERE rel_rfc.id_proveedor = vw.id_proveedor
+          AND CONVERT(pdf_rfc.rfc USING utf8mb4) COLLATE utf8mb4_unicode_ci
+            LIKE CONCAT('%', ?, '%')
+      )
+    `);
+    params.push(rfc_proveedor);
   }
 
   // Razón social proveedor
   if (razon_social_proveedor) {
-    where.push(`pdfp.razon_social_proveedor LIKE CONCAT('%', ?, '%')`);
+    where.push(`
+      EXISTS (
+        SELECT 1
+        FROM proveedores_datos_fiscales_relacion rel_razon
+        LEFT JOIN proveedores_datos_fiscales pdf_razon
+          ON pdf_razon.id = rel_razon.id_datos_fiscales
+        WHERE rel_razon.id_proveedor = vw.id_proveedor
+          AND CONVERT(pdf_razon.razon_social USING utf8mb4) COLLATE utf8mb4_unicode_ci
+            LIKE CONCAT('%', ?, '%')
+      )
+    `);
     params.push(razon_social_proveedor);
   }
 
@@ -2878,36 +2906,72 @@ const obtener = async (req, res) => {
   // Filtros que solo aplican cuando finanzas=true (requieren los JOINs de facturas)
   const whereFinanzas = [];
   const paramsFinanzas = [];
+
   if (uuid_factura) {
-    whereFinanzas.push(`f.uuid_factura LIKE CONCAT('%', ?, '%')`);
+    whereFinanzas.push(`
+      EXISTS (
+        SELECT 1
+        FROM items_facturas fi_uuid
+        INNER JOIN facturas f_uuid
+          ON f_uuid.id_factura = fi_uuid.id_factura
+        WHERE fi_uuid.id_relacion = vw.id_relacion
+          AND CONVERT(f_uuid.uuid_factura USING utf8mb4) COLLATE utf8mb4_unicode_ci
+            LIKE CONCAT('%', ?, '%')
+      )
+    `);
     paramsFinanzas.push(uuid_factura);
   }
+
   if (uuid_recibido) {
-    whereFinanzas.push(`vp.uuid_factura LIKE CONCAT('%', ?, '%')`);
+    whereFinanzas.push(`
+      EXISTS (
+        SELECT 1
+        FROM vw_pagos_facturas_proveedores_detalle vp_uuid
+        WHERE vp_uuid.id_solicitud = vw.id_solicitud_proveedor
+          AND CONVERT(vp_uuid.uuid_factura USING utf8mb4) COLLATE utf8mb4_unicode_ci
+            LIKE CONCAT('%', ?, '%')
+      )
+    `);
     paramsFinanzas.push(uuid_recibido);
   }
   const whereFinanzasSQL = whereFinanzas.length
-    ? (where.length ? ` AND ${whereFinanzas.join(" AND ")}` : `WHERE ${whereFinanzas.join(" AND ")}`)
+    ? where.length
+      ? ` AND ${whereFinanzas.join(" AND ")}`
+      : `WHERE ${whereFinanzas.join(" AND ")}`
     : "";
 
   const finanzasJoins = `LEFT JOIN items_facturas fi ON vw.id_relacion = fi.id_relacion LEFT JOIN facturas f ON fi.id_factura = f.id_factura
     left join vw_pagos_facturas_proveedores_detalle vp on vp.id_solicitud = vw.id_solicitud_proveedor`;
-    // modificacion
+  // modificacion
   const proveedorFiscalJoin = `
-  LEFT JOIN (
-    SELECT
-      rel.id_proveedor,
-      MAX(pdf.rfc) AS rfc_proveedor,
-      MAX(pdf.razon_social) AS razon_social_proveedor
-    FROM proveedores_datos_fiscales_relacion rel
-    LEFT JOIN proveedores_datos_fiscales pdf
-      ON pdf.id = rel.id_datos_fiscales
-    GROUP BY rel.id_proveedor
-  ) pdfp
-    ON pdfp.id_proveedor = vw.id_proveedor
-`;
-  
-// modificacion
+    LEFT JOIN (
+      SELECT
+        base.id_proveedor,
+        MAX(base.rfc) AS rfc_proveedor,
+        MAX(base.razon_social) AS razon_social_proveedor,
+        COUNT(DISTINCT base.razon_social) AS total_razones_sociales,
+        JSON_ARRAYAGG(
+          JSON_OBJECT(
+            'razon_social', base.razon_social
+          )
+        ) AS razones_sociales_json
+      FROM (
+        SELECT DISTINCT
+          rel.id_proveedor,
+          pdf.rfc,
+          TRIM(pdf.razon_social) AS razon_social
+        FROM proveedores_datos_fiscales_relacion rel
+        LEFT JOIN proveedores_datos_fiscales pdf
+          ON pdf.id = rel.id_datos_fiscales
+        WHERE pdf.razon_social IS NOT NULL
+          AND TRIM(pdf.razon_social) <> ''
+      ) base
+      GROUP BY base.id_proveedor
+    ) pdfp
+      ON pdfp.id_proveedor = vw.id_proveedor
+  `;
+
+  // modificacion
   const sqlTotal = `
       SELECT COUNT(DISTINCT vw.id_booking) AS total
       FROM vw_new_reservas vw
@@ -2915,7 +2979,7 @@ const obtener = async (req, res) => {
       ${finanzas ? finanzasJoins : ""}
      ${whereSQL}${whereFinanzasSQL}
     `;
-// modificacion
+  // modificacion
   const sqlData = `
     SELECT
     ${
@@ -2927,12 +2991,21 @@ const obtener = async (req, res) => {
           GROUP_CONCAT(DISTINCT vp.uuid_factura ORDER BY vp.uuid_factura SEPARATOR ', ') as uuid_recibido,
           SUM(vp.monto_facturado) as monto_facturado_factura_recibida,
           MAX(pdfp.rfc_proveedor) AS rfc_proveedor,
-          MAX(pdfp.razon_social_proveedor) AS razon_social_proveedor
+          MAX(pdfp.razon_social_proveedor) AS razon_social_proveedor,
+          MAX(pdfp.total_razones_sociales) AS total_razones_sociales,
+          MAX(pdfp.razones_sociales_json) AS razones_sociales_json
         `
         : `
           vw.*,
           pdfp.rfc_proveedor AS rfc_proveedor,
           pdfp.razon_social_proveedor AS razon_social_proveedor
+          
+          ${
+            ""
+            //   ,
+            // pdfp.total_razones_sociales AS total_razones_sociales,
+            // pdfp.razones_sociales_json AS razones_sociales_json
+          }
         `
     }
     FROM vw_new_reservas vw

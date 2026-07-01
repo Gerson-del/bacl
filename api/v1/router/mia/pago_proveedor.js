@@ -8,6 +8,8 @@ router.get("/solicitud_conciliacion", controller.getSolicitudes);
 router.get("/solicitudes_lu",controller.solicitudes_lu)
 router.post("/solicitud", controller.createSolicitud);
 router.get("/saldo_a_favor", controller.saldo_a_favor)
+router.get("/resumen_cxp", controller.resumen_cxp);// nueva vista
+router.get("/detalle_cxp", controller.detalle_cxp);
 router.post("/cambio_de_estatus", controller.cambio_estatus)
 router.post("/dispersion", controller.createDispersion)
 router.post("/pago", controller.createPago)  
@@ -18,7 +20,9 @@ router.get("/saldos",controller.saldos)
 router.get("/consultar_facturado",controller.consultar_facturado)
 router.post("/editProveedor",controller.editProveedores);
 router.get("/proveedores",controller.getProveedores);
+router.get("/cuentas/:id/historial", controller.getHistorialCuentaProveedor);
 router.patch("/cuentas/:id/active", controller.updateCuentaActive);
+router.patch("/cuentas/:id/aprobar_revision", controller.aprobarRevisionCuentaProveedor,);
 router.patch("/edit", controller.EditCampos)
 router.patch("/codigo-confirmacion", controller.editCodigoConfirmacion)
 router.post("/subir_factura",controller.cargarFactura);
