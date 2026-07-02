@@ -1,3 +1,4 @@
+// front/api/v1/router/mia/reservas.js
 const router = require("express").Router();
 const { executeQuery } = require("../../../../config/db");
 const controller = require("../../controller/reservas");

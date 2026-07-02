@@ -91,15 +91,21 @@ const getDetalles = async (req, res) => {
 
 const getCuentas = async (req, res) => {
   try {
-    const { id_proveedor } = req.query;
-    console.log(req.query);
+    const { id_proveedor, incluir_inactivas } = req.query; // si en incluir_inactivas aplicas True manda todo sin filtro)
+
     const cuentas = await executeQuery(
-      `select * from proveedores_cuentas where id_proveedor = ? AND active = 1;`,
-      [id_proveedor],
+      `
+      SELECT *
+      FROM proveedores_cuentas
+      WHERE id_proveedor = ?
+        AND (? = 1 OR active = 1)
+      ORDER BY active DESC, id DESC;
+      `,
+      [id_proveedor, Number(incluir_inactivas) === 1 ? 1 : 0],
     );
+
     res.status(200).json({ message: "", data: cuentas });
   } catch (error) {
-    console.log(error);
     res
       .status(error.statusCode || 500)
       .json({ message: error.message, data: null, error });
