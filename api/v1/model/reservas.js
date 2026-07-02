@@ -5,6 +5,7 @@ const {
 } = require("../../../config/db");
 const { v4: uuidv4 } = require("uuid");
 const { sumarDias } = require("../../../lib/utils/calculates");
+const { buscarTraslapes } = require("../../../lib/utils/traslapes");
 
 const editarReserva = async (edicionData, id_booking_a_editar) => {
   try {
@@ -532,7 +533,6 @@ const asignarFacturasItems = async (req, res) => {
 };
 
 const insertarReservaOperaciones = async (reserva, bandera) => {
-  console.log(reserva);
   const { ejemplo_saldos = [], usuarioCreador, user, intermediario } = reserva;
   console.log("Ejemplo de saldos recibidos:", reserva);
 
@@ -544,10 +544,13 @@ const insertarReservaOperaciones = async (reserva, bandera) => {
   if (!agentes || agentes.length === 0) {
     throw new Error("Agente no encontrado");
   }
-  const agente = agentes[0];
 
-  // Si es crédito, validar saldo del agente
+  const agente = agentes[0];
+  if (!reserva.viajero.id_viajero)
+    throw new Error("no hay viajero seleccionado");
+
   if (bandera === 0 && Number(agente.saldo) < Number(reserva.venta.total)) {
+    // Si es crédito, validar saldo del agente
     throw new Error(
       `El saldo del agente ${agente.nombre} es insuficiente para procesar esta reserva.`,
     );
@@ -1376,7 +1379,7 @@ const getReservaAllFacturacion = async (filters = {}) => {
       }
     }
 
-    const pag    = Math.max(1, parseInt(filters.pag   ?? 1,  10) || 1);
+    const pag = Math.max(1, parseInt(filters.pag ?? 1, 10) || 1);
     const limite = Math.max(1, parseInt(filters.limite ?? 50, 10) || 50);
 
     const params = [
@@ -1411,8 +1414,8 @@ const getReservaAllFacturacion = async (filters = {}) => {
 
     // El SP retorna 2 result sets: [0] = total_count, [1] = filas
     const countRows = Array.isArray(response?.[0]) ? response[0] : [];
-    const dataRows  = Array.isArray(response?.[1]) ? response[1] : [];
-    const total     = Number(countRows?.[0]?.total_count ?? 0);
+    const dataRows = Array.isArray(response?.[1]) ? response[1] : [];
+    const total = Number(countRows?.[0]?.total_count ?? 0);
 
     const data = dataRows.map((row) => {
       const { items_saldo, ...rest } = row;
@@ -1422,8 +1425,8 @@ const getReservaAllFacturacion = async (filters = {}) => {
     return {
       data,
       meta: {
-        pag,   
-        limite, 
+        pag,
+        limite,
         total,
         totalPaginas: Math.ceil(total / limite) || 1,
       },
