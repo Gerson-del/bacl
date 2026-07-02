@@ -4407,7 +4407,6 @@ const getSolicitudes2 = async (req, res) => {
         intermediario: r.intermediario, // igual agregue esta
         tipo_negociacion: r.tipo_negociacion,
         created_at: r.created_at,
-
         // ── Campos solicitud al nivel raíz (compatibilidad front) ──────────
         id_solicitud_proveedor: r.id_solicitud_proveedor,
         fecha_solicitud: r.fecha_solicitud,
