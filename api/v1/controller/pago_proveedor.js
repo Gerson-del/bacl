@@ -8274,40 +8274,11 @@ const buscaruuid = async (req, res) => {
 
     // 2. Si NO está cancelada, ahora sí buscar con booking_solicitud
     const qBuscar = `
-      SELECT
-        v.id_relacion_pago_factura,
-        v.id_pago_proveedor,
-        v.id_solicitud,
-        v.monto_solicitado,
-        v.id_factura,
-        v.monto_facturado,
-        v.uuid_factura,
-        v.url_pdf,
-        v.url_xml,
-        v.rfc_emisor,
-        v.id_agente,
-        v.total,
-        v.subtotal,
-        v.impuestos,
-        v.uso_cfdi,
-        v.moneda,
-        v.forma_pago,
-        v.metodo_pago,
-        v.total_moneda_O,
-        v.sub_total_moneda_O,
-        v.impuestos_moneda_O,
-        v.razon_social_fiscal,
-        v.id_booking,
-        v.codigo_confirmacion,
-        spp.estado_solicitud as estado
-      FROM vw_pagos_facturas_proveedores_detalle v
-      INNER JOIN solicitudes_pago_proveedor spp
-        ON spp.id_solicitud_proveedor = v.id_solicitud
-      INNER JOIN booking_solicitud bs
-        ON bs.id_solicitud = spp.id_solicitud_proveedor
-      WHERE v.uuid_factura LIKE TRIM(?)
-        AND UPPER(TRIM(COALESCE(spp.estado_solicitud, ''))) <> 'CANCELADA'
-      ORDER BY v.id_relacion_pago_factura DESC;
+      select sfp.monto_facturado, spp.monto_solicitado,fpp.uuid_cfdi as uuid_factura, fpp.id_factura_proveedor, spp.id_booking, vdb.id_confirmacion as codigo_confirmacion, spp.estado_solicitud as estado, spp.id_solicitud_proveedor as id_solicitud from pagos_facturas_proveedores sfp
+inner join facturas_pago_proveedor fpp on fpp.id_factura_proveedor = sfp.id_factura
+inner join solicitudes_pago_proveedor spp on spp.id_solicitud_proveedor = sfp.id_solicitud
+inner join vw_details_booking vdb on vdb.id_booking = spp.id_booking
+WHERE fpp.uuid_cfdi LIKE TRIM(?);;
     `;
 
     const rows = getRows(await executeQuery(qBuscar, [uuid]));
@@ -9040,6 +9011,68 @@ const cancelar_dispersion = async (req, res) => {
   }
 };
 
+const eliminarPagoFacturaProveedor = async (req, res) => {
+  try {
+    const { id_factura, id_solicitud } = req.body;
+
+    if (!id_factura || !id_solicitud) {
+      return res.status(400).json({
+        ok: false,
+        error: "Se requieren los campos 'id_factura' e 'id_solicitud'",
+      });
+    }
+
+    const idSolicitudNum = Number(id_solicitud);
+    if (!Number.isInteger(idSolicitudNum) || idSolicitudNum <= 0) {
+      return res.status(400).json({
+        ok: false,
+        error: "'id_solicitud' debe ser un entero positivo",
+      });
+    }
+
+    const idFacturaStr = String(id_factura).trim();
+
+    const getRows = (result) =>
+      Array.isArray(result) ? result : (result?.[0] ?? []);
+
+    const existente = getRows(
+      await executeQuery(
+        `SELECT id, id_solicitud, id_factura, monto_facturado, monto_pago
+         FROM pagos_facturas_proveedores
+         WHERE id_factura = ? AND id_solicitud = ?
+         LIMIT 1`,
+        [idFacturaStr, idSolicitudNum]
+      )
+    );
+
+    if (!existente.length) {
+      return res.status(404).json({
+        ok: false,
+        error: "No se encontró ningún registro con esa combinación de id_factura e id_solicitud",
+        request: { id_factura: idFacturaStr, id_solicitud: idSolicitudNum },
+      });
+    }
+
+    await executeQuery(
+      `DELETE FROM pagos_facturas_proveedores WHERE id_factura = ? AND id_solicitud = ?`,
+      [idFacturaStr, idSolicitudNum]
+    );
+
+    return res.status(200).json({
+      ok: true,
+      message: "Registro eliminado correctamente",
+      data: existente[0],
+    });
+  } catch (error) {
+    console.error("Error en eliminarPagoFacturaProveedor:", error);
+    return res.status(500).json({
+      ok: false,
+      error: "Error al eliminar el registro",
+      details: error?.message ?? error,
+    });
+  }
+};
+
 module.exports = {
   devolverMontoFacturadoAFacturasPorCancelacion,
   createSolicitud,
@@ -9070,4 +9103,5 @@ module.exports = {
   cuentas,
   solicitudes_lu,
   editCodigoConfirmacion,
+  eliminarPagoFacturaProveedor,
 };
