@@ -4161,6 +4161,10 @@ const getSolicitudes2 = async (req, res) => {
       String(v ?? "")
         .trim()
         .toLowerCase();
+    const norm = (v) =>
+      String(v ?? "")
+        .trim()
+        .toLowerCase();
 
     const clean = (v) => {
       const raw = String(v ?? "");
@@ -4923,14 +4927,14 @@ const resumen_cxp = async (req, res) => {
         p.negociacion,
         p.estatus
     `;
-const sqlData = `
+    const sqlData = `
   SELECT *
   FROM (${sqlBase}) resumen
   ORDER BY saldo_pendiente DESC, monto_solicitado DESC
   LIMIT ${limit} OFFSET ${offset};
 `;
 
-const sqlTotales = `
+    const sqlTotales = `
   SELECT
     COUNT(*) AS total_proveedores,
 
@@ -4999,24 +5003,24 @@ const sqlTotales = `
   FROM (${sqlBase}) resumen;
 `;
 
-const data = await executeQuery(sqlData, params);
-const totalsRows = await executeQuery(sqlTotales, params);
+    const data = await executeQuery(sqlData, params);
+    const totalsRows = await executeQuery(sqlTotales, params);
 
-const totals = totalsRows?.[0] || {};
-const total = Number(totals.total_proveedores || 0);
+    const totals = totalsRows?.[0] || {};
+    const total = Number(totals.total_proveedores || 0);
 
-return res.status(200).json({
-  ok: true,
-  message: "Resumen CXP obtenido con éxito",
-  data,
-  totals,
-  metadata: {
-    page,
-    limit,
-    total,
-    total_pages: Math.ceil(total / limit),
-  },
-});
+    return res.status(200).json({
+      ok: true,
+      message: "Resumen CXP obtenido con éxito",
+      data,
+      totals,
+      metadata: {
+        page,
+        limit,
+        total,
+        total_pages: Math.ceil(total / limit),
+      },
+    });
   } catch (error) {
     console.error("Error en resumen_cxp:", error);
     return res.status(500).json({
