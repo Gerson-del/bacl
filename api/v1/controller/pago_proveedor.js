@@ -4161,10 +4161,6 @@ const getSolicitudes2 = async (req, res) => {
       String(v ?? "")
         .trim()
         .toLowerCase();
-    const norm = (v) =>
-      String(v ?? "")
-        .trim()
-        .toLowerCase();
 
     const clean = (v) => {
       const raw = String(v ?? "");
