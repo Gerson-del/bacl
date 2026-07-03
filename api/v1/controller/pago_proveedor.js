@@ -3921,6 +3921,13 @@ const getSolicitudes = async (req, res) => {
       tipo_reserva_pago: clean(req.query.tipo_reserva_pago),
       pagos_parciales: clean(req.query.pagos_parciales),
       facturas_parciales: clean(req.query.facturas_parciales),
+
+      // ***  Estos filtros los agrego neft ***
+      canal_de_reservacion: clean(req.query.canal_de_reservacion),
+      nombre_intermediario: clean(req.query.nombre_intermediario),
+      forma_pago_solicitada: clean(req.query.forma_pago_solicitada),
+      comentario_AP: clean(req.query.comentario_AP),
+      reserva_diferencia: clean(req.query.reserva_diferencia),
     };
 
     const pagina = Math.max(
@@ -3970,6 +3977,12 @@ const getSolicitudes = async (req, res) => {
         filters.facturas_parciales, // p_facturas_parciales
         pagina, // p_pagina
         limite, // p_limite
+
+        filters.canal_de_reservacion,
+        filters.nombre_intermediario,
+        filters.forma_pago_solicitada,
+        filters.comentario_AP,
+        filters.reserva_diferencia,
       ]),
     ]);
 
