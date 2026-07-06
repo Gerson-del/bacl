@@ -459,7 +459,7 @@ const updateDatosFiscales = async (req, res) => {
     // 2. Actualizar el registro
     await executeQuery(
       `UPDATE proveedores_datos_fiscales 
-       SET rfc = ?, alias = ?, razon_social = ?
+       SET rfc = ?, alias = ?, razon_social = ? 
        WHERE ID = ?`,
       [
         rfc.trim().toUpperCase(),
@@ -489,8 +489,18 @@ group by pdf.id;`,
 
 const createProveedorCuenta = async (req, res) => {
   try {
-    const { id_proveedor, cuenta, banco, titular, comentarios, alias } =
-      req.body;
+    const {
+      id_proveedor,
+      cuenta,
+      banco,
+      titular,
+      comentarios,
+      alias,
+      email,
+      tipo_cta,
+      cta,
+      updated_at,
+    } = req.body;
     const { user } = req.session || {};
 
     if (!user)
@@ -516,8 +526,8 @@ const createProveedorCuenta = async (req, res) => {
       await setAuditUser(conn, user);
       await conn.execute(
         `INSERT INTO proveedores_cuentas
-         (id_proveedor, cuenta, banco, titular, comentarios, alias, url_caratula)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+   (id_proveedor, cuenta, banco, titular, comentarios, alias, email, tipo_cta, cta, url_caratula, updated_at)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           id_proveedor,
           cuenta.trim(),
@@ -525,13 +535,22 @@ const createProveedorCuenta = async (req, res) => {
           titular?.trim().toUpperCase() || null,
           comentarios || null,
           alias?.trim().toUpperCase() || null,
+          email?.trim() || null,
+          tipo_cta?.trim() || null,
+          cta?.trim() || null,
+          updated_at?.trim() || null,
           url_caratula,
         ],
       );
     });
 
     const response = await executeQuery(
-      `SELECT * FROM proveedores_cuentas WHERE id_proveedor = ? AND active = 1`,
+      `
+  SELECT *
+  FROM proveedores_cuentas
+  WHERE id_proveedor = ?
+  ORDER BY active DESC, id DESC
+  `,
       [id_proveedor],
     );
 
@@ -547,8 +566,18 @@ const createProveedorCuenta = async (req, res) => {
 
 const updateProveedorCuenta = async (req, res) => {
   try {
-    const { id, id_proveedor, cuenta, banco, titular, comentarios, alias } =
-      req.body;
+    const {
+      id,
+      id_proveedor,
+      cuenta,
+      banco,
+      titular,
+      comentarios,
+      alias,
+      email,
+      tipo_cta,
+      cta,
+    } = req.body;
     const { user } = req.session || {};
     console.log("USER\n\n", user, "\n\n");
     if (!user)
@@ -586,6 +615,10 @@ const updateProveedorCuenta = async (req, res) => {
         "titular = ?",
         "comentarios = ?",
         "alias = ?",
+        "email = ?",
+        "tipo_cta = ?",
+        "cta = ?",
+        "updated_at = ?",
       ];
       const setParams = [
         cuenta.trim(),
@@ -593,6 +626,10 @@ const updateProveedorCuenta = async (req, res) => {
         titular?.trim().toUpperCase() || null,
         comentarios || null,
         alias?.trim().toUpperCase() || null,
+        email?.trim() || null,
+        tipo_cta?.trim() || null,
+        cta?.trim() || null,
+        updated_at?.trim() || null,
       ];
 
       if (url_caratula) {
@@ -607,7 +644,12 @@ const updateProveedorCuenta = async (req, res) => {
     });
 
     const response = await executeQuery(
-      `SELECT * FROM proveedores_cuentas WHERE id_proveedor = ? AND active = 1`,
+      `
+  SELECT *
+  FROM proveedores_cuentas
+  WHERE id_proveedor = ?
+  ORDER BY active DESC, id DESC
+  `,
       [id_proveedor],
     );
 
