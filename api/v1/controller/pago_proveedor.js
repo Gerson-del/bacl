@@ -4383,6 +4383,10 @@ const getSolicitudes2 = async (req, res) => {
       ];
 
       return {
+        dias_vencimiento_factura: r.dias_vencimiento_factura,
+        fecha_creacion_factura_proveedor: r.fecha_creacion_factura_proveedor,
+        fecha_vencimiento_factura: r.fecha_vencimiento_factura,
+        vencimiento_credito_proveedor: r.vencimiento_credito_proveedor,
         // ── Campos planos del booking (usados por el front directamente) ──
         hotel: r.hotel,
         nombre_viajero: r.nombre_viajero,
@@ -4924,14 +4928,14 @@ const resumen_cxp = async (req, res) => {
         p.negociacion,
         p.estatus
     `;
-const sqlData = `
+    const sqlData = `
   SELECT *
   FROM (${sqlBase}) resumen
   ORDER BY saldo_pendiente DESC, monto_solicitado DESC
   LIMIT ${limit} OFFSET ${offset};
 `;
 
-const sqlTotales = `
+    const sqlTotales = `
   SELECT
     COUNT(*) AS total_proveedores,
 
@@ -5000,24 +5004,24 @@ const sqlTotales = `
   FROM (${sqlBase}) resumen;
 `;
 
-const data = await executeQuery(sqlData, params);
-const totalsRows = await executeQuery(sqlTotales, params);
+    const data = await executeQuery(sqlData, params);
+    const totalsRows = await executeQuery(sqlTotales, params);
 
-const totals = totalsRows?.[0] || {};
-const total = Number(totals.total_proveedores || 0);
+    const totals = totalsRows?.[0] || {};
+    const total = Number(totals.total_proveedores || 0);
 
-return res.status(200).json({
-  ok: true,
-  message: "Resumen CXP obtenido con éxito",
-  data,
-  totals,
-  metadata: {
-    page,
-    limit,
-    total,
-    total_pages: Math.ceil(total / limit),
-  },
-});
+    return res.status(200).json({
+      ok: true,
+      message: "Resumen CXP obtenido con éxito",
+      data,
+      totals,
+      metadata: {
+        page,
+        limit,
+        total,
+        total_pages: Math.ceil(total / limit),
+      },
+    });
   } catch (error) {
     console.error("Error en resumen_cxp:", error);
     return res.status(500).json({
@@ -9726,11 +9730,7 @@ const updateCuentaActive = async (req, res) => {
     const { active } = req.body;
 
     const user =
-      req.user ||
-      req.usuario ||
-      req.session?.user ||
-      req.body?.user ||
-      null;
+      req.user || req.usuario || req.session?.user || req.body?.user || null;
 
     const activeValue =
       active === true || active === 1 || active === "1" ? 1 : 0;
@@ -9815,11 +9815,7 @@ const aprobarRevisionCuentaProveedor = async (req, res) => {
     const { id } = req.params;
 
     const user =
-      req.user ||
-      req.usuario ||
-      req.session?.user ||
-      req.body?.user ||
-      null;
+      req.user || req.usuario || req.session?.user || req.body?.user || null;
 
     if (!id) {
       return res.status(400).json({
