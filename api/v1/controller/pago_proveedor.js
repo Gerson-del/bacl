@@ -4396,6 +4396,10 @@ const getSolicitudes2 = async (req, res) => {
       ];
 
       return {
+        dias_vencimiento_factura: r.dias_vencimiento_factura,
+        fecha_creacion_factura_proveedor: r.fecha_creacion_factura_proveedor,
+        fecha_vencimiento_factura: r.fecha_vencimiento_factura,
+        vencimiento_credito_proveedor: r.vencimiento_credito_proveedor,
         // ── Campos planos del booking (usados por el front directamente) ──
         hotel: r.hotel,
         nombre_viajero: r.nombre_viajero,
