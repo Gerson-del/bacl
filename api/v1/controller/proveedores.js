@@ -609,28 +609,30 @@ const updateProveedorCuenta = async (req, res) => {
     await runTransaction(async (conn) => {
       await setAuditUser(conn, user);
 
-      const setClauses = [
-        "cuenta = ?",
-        "banco = ?",
-        "titular = ?",
-        "comentarios = ?",
-        "alias = ?",
-        "email = ?",
-        "tipo_cta = ?",
-        "cta = ?",
-        "updated_at = ?",
-      ];
-      const setParams = [
-        cuenta.trim(),
-        banco?.trim().toUpperCase() || null,
-        titular?.trim().toUpperCase() || null,
-        comentarios || null,
-        alias?.trim().toUpperCase() || null,
-        email?.trim() || null,
-        tipo_cta?.trim() || null,
-        cta?.trim() || null,
-        updated_at?.trim() || null,
-      ];
+      const fields = {
+        cuenta: cuenta.trim(),
+        banco:
+          banco !== undefined ? banco?.trim().toUpperCase() || null : undefined,
+        titular:
+          titular !== undefined
+            ? titular?.trim().toUpperCase() || null
+            : undefined,
+        comentarios: comentarios !== undefined ? comentarios || null : undefined,
+        alias:
+          alias !== undefined ? alias?.trim().toUpperCase() || null : undefined,
+        email: email !== undefined ? email?.trim() || null : undefined,
+        tipo_cta:
+          tipo_cta !== undefined ? String(tipo_cta).trim() || null : undefined,
+        cta: cta !== undefined ? String(cta).trim() || null : undefined,
+      };
+
+      const setClauses = ["updated_at = NOW()"];
+      const setParams = [];
+      for (const [column, value] of Object.entries(fields)) {
+        if (value === undefined) continue;
+        setClauses.push(`${column} = ?`);
+        setParams.push(value);
+      }
 
       if (url_caratula) {
         setClauses.push("url_caratula = ?");
