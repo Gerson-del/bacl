@@ -735,6 +735,7 @@ const createSolicitud = async (req, res) => {
     metodo_de_pago,
     id_tarjeta,
     referencia_pago,
+    id_titular,
     nombre_pagador,
     rfc_pagador,
     domicilio_pagador,
@@ -749,7 +750,7 @@ const createSolicitud = async (req, res) => {
     ?, ?, ?, ?, ?,
     ?, ?, ?, ?, ?,
     ?, ?, ?, ?, ?,
-    ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?
   );
 `;
     const insertPagoProveedorCardSql = `
@@ -775,6 +776,7 @@ const createSolicitud = async (req, res) => {
     metodo_de_pago,
     id_tarjeta,
     referencia_pago,
+    id_titular,
     nombre_pagador,
     rfc_pagador,
     domicilio_pagador,
@@ -789,7 +791,7 @@ const createSolicitud = async (req, res) => {
     ?, ?, ?, ?, ?,
     ?, ?, ?, ?, ?,
     ?, ?, ?, ?, ?,
-    ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?
   );
 `;
 
@@ -814,20 +816,20 @@ const createSolicitud = async (req, res) => {
         ? paymentSchedule
         : [{ fecha_pago: date, monto: monto_a_pagar }];
 
-    if (formaPagoDB === "card" || formaPagoDB === "link") {
-      if (!selectedCard) {
-        return res.status(400).json({
-          ok: false,
-          message: "Falta selectedCard para card/link.",
-        });
-      }
-      const sum = schedule.reduce((acc, it) => acc + Number(it.monto || 0), 0);
-      if (Math.abs(sum - Number(monto_a_pagar)) > 0.01) {
-        return res.status(400).json({
-          ok: false,
-          message: `La suma del schedule (${sum.toFixed(2)}) debe igualar monto_a_pagar (${Number(monto_a_pagar).toFixed(2)})`,
-        });
-      }
+    // if (formaPagoDB === "card" || formaPagoDB === "link") {
+    //   if (!selectedCard) {
+    //     return res.status(400).json({
+    //       ok: false,
+    //       message: "Falta selectedCard para card/link.",
+    //     });
+    //   }}
+
+    const sum = schedule.reduce((acc, it) => acc + Number(it.monto || 0), 0);
+    if (Math.abs(sum - Number(monto_a_pagar)) > 0.01) {
+      return res.status(400).json({
+        ok: false,
+        message: `La suma del schedule (${sum.toFixed(2)}) debe igualar monto_a_pagar (${Number(monto_a_pagar).toFixed(2)})`,
+      });
     }
 
     if (!id_hospedaje) {
@@ -850,9 +852,14 @@ const createSolicitud = async (req, res) => {
         : normalizeHora(hora);
 
     // ✅ tarjeta SOLO card/link; transfer/credit => NULL
+    // const cardId =
+    //   formaPagoDB === "card" || formaPagoDB === "link"
+    //     ? String(selectedCard)
+    //     : null;
+
     const cardId =
       formaPagoDB === "card" || formaPagoDB === "link"
-        ? String(selectedCard)
+        ? String(schedule[0]?.referencia_pago || "")
         : null;
 
     const documentoId = String(documento ?? "").trim() || null;
@@ -923,7 +930,8 @@ const createSolicitud = async (req, res) => {
                 ? `${fechaPago} ${horaPago}`
                 : fechaPago,
             monto: Number(it?.monto || 0),
-            id_tarjeta: it?.id_tarjeta ? String(it.id_tarjeta) : cardId,
+            id_tarjeta: it?.referencia_pago ? String(it.referencia_pago) : null,
+            id_titular: it?.idTitular ? Number(it.idTitular) : null,
           };
         })
         .filter(
@@ -972,7 +980,7 @@ const createSolicitud = async (req, res) => {
           concepto: conceptoBase,
           metodo_de_pago: formaPagoDB, // "link" o "card"
           id_tarjeta: rows[i].id_tarjeta || null,
-          referencia_pago: selectedCard ? String(selectedCard) : null,
+          referencia_pago: rows[i].id_tarjeta || null,
           nombre_pagador: null,
           rfc_pagador: null,
           domicilio_pagador: null,
@@ -982,6 +990,7 @@ const createSolicitud = async (req, res) => {
           iva: null,
           total: monto,
           id_confirmacion: idConfirmacion,
+          id_titular: rows[i].id_titular || null,
         };
 
         if (formaPagoDB === "link") {
@@ -1008,6 +1017,7 @@ const createSolicitud = async (req, res) => {
             common.metodo_de_pago,
             common.id_tarjeta,
             common.referencia_pago,
+            common.id_titular,
             common.nombre_pagador,
             common.rfc_pagador,
             common.domicilio_pagador,
@@ -1042,6 +1052,7 @@ const createSolicitud = async (req, res) => {
             common.metodo_de_pago,
             common.id_tarjeta,
             common.referencia_pago,
+            common.id_titular,
             common.nombre_pagador,
             common.rfc_pagador,
             common.domicilio_pagador,
