@@ -91,15 +91,21 @@ const getDetalles = async (req, res) => {
 
 const getCuentas = async (req, res) => {
   try {
-    const { id_proveedor } = req.query;
-    console.log(req.query);
+    const { id_proveedor, incluir_inactivas } = req.query; // si en incluir_inactivas aplicas True manda todo sin filtro)
+
     const cuentas = await executeQuery(
-      `select * from proveedores_cuentas where id_proveedor = ? AND active = 1;`,
-      [id_proveedor],
+      `
+      SELECT *
+      FROM proveedores_cuentas
+      WHERE id_proveedor = ?
+        AND (? = 1 OR active = 1)
+      ORDER BY active DESC, id DESC;
+      `,
+      [id_proveedor, Number(incluir_inactivas) === 1 ? 1 : 0],
     );
+
     res.status(200).json({ message: "", data: cuentas });
   } catch (error) {
-    console.log(error);
     res
       .status(error.statusCode || 500)
       .json({ message: error.message, data: null, error });
@@ -453,7 +459,7 @@ const updateDatosFiscales = async (req, res) => {
     // 2. Actualizar el registro
     await executeQuery(
       `UPDATE proveedores_datos_fiscales 
-       SET rfc = ?, alias = ?, razon_social = ?
+       SET rfc = ?, alias = ?, razon_social = ? 
        WHERE ID = ?`,
       [
         rfc.trim().toUpperCase(),
@@ -483,8 +489,18 @@ group by pdf.id;`,
 
 const createProveedorCuenta = async (req, res) => {
   try {
-    const { id_proveedor, cuenta, banco, titular, comentarios, alias } =
-      req.body;
+    const {
+      id_proveedor,
+      cuenta,
+      banco,
+      titular,
+      comentarios,
+      alias,
+      email,
+      tipo_cta,
+      cta,
+      updated_at,
+    } = req.body;
     const { user } = req.session || {};
 
     if (!user)
@@ -510,8 +526,8 @@ const createProveedorCuenta = async (req, res) => {
       await setAuditUser(conn, user);
       await conn.execute(
         `INSERT INTO proveedores_cuentas
-         (id_proveedor, cuenta, banco, titular, comentarios, alias, url_caratula)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+   (id_proveedor, cuenta, banco, titular, comentarios, alias, email, tipo_cta, cta, url_caratula, updated_at)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           id_proveedor,
           cuenta.trim(),
@@ -519,13 +535,22 @@ const createProveedorCuenta = async (req, res) => {
           titular?.trim().toUpperCase() || null,
           comentarios || null,
           alias?.trim().toUpperCase() || null,
+          email?.trim() || null,
+          tipo_cta?.trim() || null,
+          cta?.trim() || null,
+          updated_at?.trim() || null,
           url_caratula,
         ],
       );
     });
 
     const response = await executeQuery(
-      `SELECT * FROM proveedores_cuentas WHERE id_proveedor = ? AND active = 1`,
+      `
+  SELECT *
+  FROM proveedores_cuentas
+  WHERE id_proveedor = ?
+  ORDER BY active DESC, id DESC
+  `,
       [id_proveedor],
     );
 
@@ -541,8 +566,18 @@ const createProveedorCuenta = async (req, res) => {
 
 const updateProveedorCuenta = async (req, res) => {
   try {
-    const { id, id_proveedor, cuenta, banco, titular, comentarios, alias } =
-      req.body;
+    const {
+      id,
+      id_proveedor,
+      cuenta,
+      banco,
+      titular,
+      comentarios,
+      alias,
+      email,
+      tipo_cta,
+      cta,
+    } = req.body;
     const { user } = req.session || {};
     console.log("USER\n\n", user, "\n\n");
     if (!user)
@@ -574,20 +609,30 @@ const updateProveedorCuenta = async (req, res) => {
     await runTransaction(async (conn) => {
       await setAuditUser(conn, user);
 
-      const setClauses = [
-        "cuenta = ?",
-        "banco = ?",
-        "titular = ?",
-        "comentarios = ?",
-        "alias = ?",
-      ];
-      const setParams = [
-        cuenta.trim(),
-        banco?.trim().toUpperCase() || null,
-        titular?.trim().toUpperCase() || null,
-        comentarios || null,
-        alias?.trim().toUpperCase() || null,
-      ];
+      const fields = {
+        cuenta: cuenta.trim(),
+        banco:
+          banco !== undefined ? banco?.trim().toUpperCase() || null : undefined,
+        titular:
+          titular !== undefined
+            ? titular?.trim().toUpperCase() || null
+            : undefined,
+        comentarios: comentarios !== undefined ? comentarios || null : undefined,
+        alias:
+          alias !== undefined ? alias?.trim().toUpperCase() || null : undefined,
+        email: email !== undefined ? email?.trim() || null : undefined,
+        tipo_cta:
+          tipo_cta !== undefined ? String(tipo_cta).trim() || null : undefined,
+        cta: cta !== undefined ? String(cta).trim() || null : undefined,
+      };
+
+      const setClauses = ["updated_at = NOW()"];
+      const setParams = [];
+      for (const [column, value] of Object.entries(fields)) {
+        if (value === undefined) continue;
+        setClauses.push(`${column} = ?`);
+        setParams.push(value);
+      }
 
       if (url_caratula) {
         setClauses.push("url_caratula = ?");
@@ -601,7 +646,12 @@ const updateProveedorCuenta = async (req, res) => {
     });
 
     const response = await executeQuery(
-      `SELECT * FROM proveedores_cuentas WHERE id_proveedor = ? AND active = 1`,
+      `
+  SELECT *
+  FROM proveedores_cuentas
+  WHERE id_proveedor = ?
+  ORDER BY active DESC, id DESC
+  `,
       [id_proveedor],
     );
 

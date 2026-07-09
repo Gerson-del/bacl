@@ -1,3 +1,4 @@
+// backend/api/v1/router/general/mia.js
 const router = require("express").Router();
 const solicitud = require("../mia/solicitud");
 const auth = require("../mia/auth");
