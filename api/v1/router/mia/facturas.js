@@ -5,7 +5,7 @@ const v2 = require("../../../../v2/controller/facturas.controller");
 const { hasPermission } = require("../../../../middleware/verifyPermission");
 
 router.post("/filtrarFacturas", controller.filtrarFacturas);
-router.post("/facturas_completas",controller.all_facturas);
+router.post("/facturas_completas", controller.all_facturas);
 router.post(
   "/",
   middleware.validateParams(["info_user", "cfdi"]),
@@ -31,6 +31,7 @@ router.get(
 router.get("/detallesConexion", controller.getDetallesConexionesFactura);
 router.get("/eliminar factura");
 router.delete("/quitar_relacion", controller.getQuitarDetalles);
+router.delete("/desasociar_reserva", controller.desasociarReservaFactura);
 router.get("/getfulldetalles", controller.getFullDetalles);
 
 router.get("/get_agente_facturas", controller.get_agente_facturas);
@@ -39,8 +40,6 @@ router.post(
   "/crearFacturaDesdeCargaPagos",
   controller.crearFacturaDesdeCargaPagos,
 );
-
-
 
 router.post("/CrearFacturaDesdeCarga", controller.crearFacturaDesdeCarga);
 router.post(
@@ -69,7 +68,6 @@ router.put("/documentos", controller.updateDocumentosFacturas);
 router.get("/detalles_facturas", controller.getFacturasDetalles);
 router.post("/link-pago", controller.crearLinkPagoFacturas);
 module.exports = router;
-
 /**
  *
  *
@@ -100,11 +98,5 @@ router.delete(
   hasPermission("facturacion.cancelacion.facturas_meses_pasados"),
   v2.cancelarFacturaById,
 );
-router.get(
-  "/:id",
-  v2.obtenerFacturaById,
-);
-router.get(
-  "/",
-  v2.getFacturas,
-);
+router.get("/:id", v2.obtenerFacturaById);
+router.get("/", v2.getFacturas);
