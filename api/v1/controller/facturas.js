@@ -739,9 +739,17 @@ const asignarFacturaPagos = async (req, res) => {
       }
 
       if (!donorKey) {
-        throw new Error(
-          `[LINK] No hay donador para meter 1 centavo en FACTURA ${id_factura} con saldo ${id_saldo}`,
+        // Sin donador real: se acepta 1 centavo de descuadre (ya se sumó a
+        // kTarget arriba) en vez de tronar toda la conciliación por un caso
+        // aislado. Diferencia máxima acumulable: MAX_IT centavos.
+        // throw new Error(
+        //   `[LINK] No hay donador para meter 1 centavo en FACTURA ${id_factura} con saldo ${id_saldo}`,
+        // );
+        log(
+          "[LINK][WARN] Sin donador para 1 centavo en FACTURA, se acepta descuadre",
+          { id_factura, id_saldo },
         );
+        return;
       }
 
       facMap.set(donorKey, (facMap.get(donorKey) ?? 0) - 1);
@@ -806,9 +814,28 @@ const asignarFacturaPagos = async (req, res) => {
       }
 
       if (!chosenItem) {
-        throw new Error(
-          `[LINK] No hay item/donador para meter 1 centavo en ITEMS de FACTURA ${id_factura} con saldo ${id_saldo}`,
+        // Sin item/donador real: se acepta 1 centavo de descuadre en vez de
+        // tronar toda la conciliación por un caso aislado. Se mete el
+        // centavo en el primer item de la factura sin quitarlo de ningún
+        // lado. Diferencia máxima acumulable: MAX_IT centavos.
+        // throw new Error(
+        //   `[LINK] No hay item/donador para meter 1 centavo en ITEMS de FACTURA ${id_factura} con saldo ${id_saldo}`,
+        // );
+        const fallbackItem = itemsFactura[0];
+        if (!fallbackItem) {
+          log(
+            "[LINK][WARN] Factura sin items, no se puede acomodar el centavo",
+            { id_factura, id_saldo },
+          );
+          return;
+        }
+        const kFallback = `${fallbackItem}|${id_saldo}`;
+        itemMap.set(kFallback, (itemMap.get(kFallback) ?? 0) + 1);
+        log(
+          "[LINK][WARN] Sin item/donador para 1 centavo, se acepta descuadre",
+          { id_factura, id_saldo, fallbackItem },
         );
+        return;
       }
 
       // +1 cent al target en chosenItem
