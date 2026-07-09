@@ -4383,15 +4383,16 @@ const getSolicitudes2 = async (req, res) => {
         filters.fecha_emision_factura_end,
         filters.pag,
         filters.limite,
-
-        // ***** Estas las agrego neft *****
-        filters.canal_de_reservacion,
-        filters.nombre_intermediario,
-        filters.forma_pago_solicitada,
-        filters.comentario_ap,
-        filters.reserva_diferencia,
         bucketFiltro ?? null,
 
+        // ***** Estas las agrego neft *****
+        // TODO: get_solicitudes_pago_v2 aún no tiene estos parámetros en el SP.
+        // Agregarlos aquí de nuevo (antes de p_bucket) cuando se actualice el SP en la BD.
+        // filters.canal_de_reservacion,
+        // filters.nombre_intermediario,
+        // filters.forma_pago_solicitada,
+        // filters.comentario_AP,
+        // filters.reserva_diferencia,
         // *****Estas las agrego neft*****
       ],
     );
