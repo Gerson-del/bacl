@@ -805,7 +805,7 @@ const createSolicitud = async (req, res) => {
           : formaPagoDB === "card"
             ? "CARTA_ENVIADA"
             : formaPagoDB === "link"
-              ? "PAGADO_LINK"
+              ? "PAGADO LINK"
               : "CARTA_ENVIADA";
 
     // ✅ estatus_pagos en tu tabla es varchar(45), puedes dejarlo así:
@@ -817,13 +817,14 @@ const createSolicitud = async (req, res) => {
         ? paymentSchedule
         : [{ fecha_pago: date, monto: monto_a_pagar }];
 
-    // if (formaPagoDB === "card" || formaPagoDB === "link") {
-    //   if (!selectedCard) {
-    //     return res.status(400).json({
-    //       ok: false,
-    //       message: "Falta selectedCard para card/link.",
-    //     });
-    //   }}
+    if (formaPagoDB === "card" || formaPagoDB === "link") {
+      if (!String(selectedCard || "").trim()) {
+        return res.status(400).json({
+          ok: false,
+          message: "Falta selectedCard para card/link.",
+        });
+      }
+    }
 
     const sum = schedule.reduce((acc, it) => acc + Number(it.monto || 0), 0);
     if (Math.abs(sum - Number(monto_a_pagar)) > 0.01) {
@@ -853,14 +854,9 @@ const createSolicitud = async (req, res) => {
         : normalizeHora(hora);
 
     // ✅ tarjeta SOLO card/link; transfer/credit => NULL
-    // const cardId =
-    //   formaPagoDB === "card" || formaPagoDB === "link"
-    //     ? String(selectedCard)
-    //     : null;
-
     const cardId =
       formaPagoDB === "card" || formaPagoDB === "link"
-        ? String(schedule[0]?.referencia_pago || "")
+        ? String(selectedCard)
         : null;
 
     const documentoId = String(documento ?? "").trim() || null;
@@ -931,7 +927,9 @@ const createSolicitud = async (req, res) => {
                 ? `${fechaPago} ${horaPago}`
                 : fechaPago,
             monto: Number(it?.monto || 0),
-            id_tarjeta: it?.referencia_pago ? String(it.referencia_pago) : null,
+            id_tarjeta: it?.referencia_pago
+              ? String(it.referencia_pago)
+              : cardId || null,
             id_titular: it?.idTitular ? Number(it.idTitular) : null,
           };
         })
