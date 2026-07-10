@@ -16,6 +16,7 @@ const { STORED_PROCEDURE } = require("../../../lib/constant/stored_procedures");
 const { sendEmail } = require("../../../services/email");
 
 //helpers
+const round2 = (n) => Number(Number(n || 0).toFixed(2));
 
 function money2(n) {
   const x = Number(n);
@@ -2155,8 +2156,6 @@ const createComprobantePago = async (req, res) => {
       const d = new Date(s);
       return Number.isNaN(d.getTime()) ? new Date() : d;
     };
-
-    const round2 = (n) => Number(Number(n || 0).toFixed(2));
 
     const insertarPago = async ({
       id_solicitud_proveedor,
@@ -7011,7 +7010,6 @@ const monto_factura = async (req, res) => {
       return Number.isFinite(n) ? n : NaN;
     };
 
-    const round2 = (n) => Number(Number(n || 0).toFixed(2));
     const toMoneyString = (n) => round2(n).toFixed(2);
 
     const idSolicitud = Number(id_solicitud_proveedor ?? id_solicitud);
@@ -8402,7 +8400,6 @@ const asignar_factura_previa = async (req, res) => {
       return Number.isFinite(n) ? n : NaN;
     };
 
-    const round2 = (n) => Number(Number(n || 0).toFixed(2));
     const toMoneyString = (n) => round2(n).toFixed(2);
 
     const uuid = safeString(uuid_cfdi);

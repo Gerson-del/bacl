@@ -226,9 +226,37 @@ async function setAuditUser(connection, user) {
   );
 }
 
+/**
+ * Devuelve un ejecutor de queries compatible con `executeQuery`.
+ *
+ * Si se pasa una `connection` (transacción externa), la usa directamente.
+ * Si no, usa el pool normal.
+ *
+ * Permite que los métodos del repositorio soporten transacciones externas
+ * sin repetir el condicional `if (conn) ... else ...` en cada método.
+ *
+ * @param {import('mysql2/promise').PoolConnection | null} [conn=null]
+ * @returns {(query: string, params?: any[]) => Promise<any>}
+ *
+ * @example
+ * async create(data, conn = null) {
+ *   const run = getExecutor(conn);
+ *   const result = await run('INSERT INTO ...', [data.field]);
+ *   return { insertId: result.insertId };
+ * }
+ */
+function getExecutor(conn = null) {
+  if (conn) {
+    return (query, params = []) =>
+      conn.execute(query, params).then(([rows]) => rows);
+  }
+  return executeQuery;
+}
+
 module.exports = {
   pool,
   executeQuery,
+  getExecutor,
   executeTransaction,
   executeSP,
   runTransaction,
