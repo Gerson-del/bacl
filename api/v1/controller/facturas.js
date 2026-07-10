@@ -1930,7 +1930,7 @@ const filtrarFacturas = async (req, res) => {
       params.push(id_cliente);
     }
     if (cliente) {
-      conditions.push("ad.nombre LIKE CONCAT('%', ?, '%')");
+      conditions.push("f.nombre_cliente LIKE CONCAT('%', ?, '%')");
       params.push(cliente);
     }
     if (uuid) {
@@ -1952,10 +1952,6 @@ const filtrarFacturas = async (req, res) => {
 
     const whereSql = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
-    // ad solo hace falta en la query de datos (para nombre/razon_social)
-    // y en el COUNT si se está filtrando por cliente.
-    const joinSql = `LEFT JOIN agente_details ad ON ad.id_agente = f.usuario_creador`;
-
     const pageNum = Number(page);
     const lengthNum = Number(length);
     const hasPagination =
@@ -1966,9 +1962,8 @@ const filtrarFacturas = async (req, res) => {
 
     const data = await executeQuery(
       `
-      SELECT f.*, ad.nombre, ad.razon_social
+      SELECT f.*
       FROM facturas f
-      ${joinSql}
       ${whereSql}
       ORDER BY f.created_at DESC, f.id_factura DESC
       ${hasPagination ? `LIMIT ${safeLength} OFFSET ${offset}` : ""}
@@ -1988,7 +1983,6 @@ const filtrarFacturas = async (req, res) => {
         `
         SELECT COUNT(*) AS total
         FROM facturas f
-        ${cliente ? joinSql : ""}
         ${whereSql}
         `,
         params,
