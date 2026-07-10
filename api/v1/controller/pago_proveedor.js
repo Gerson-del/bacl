@@ -760,6 +760,7 @@ const createSolicitud = async (req, res) => {
     id_pago_dispersion,
     id_solicitud_proveedor,
     codigo_dispersion,
+    monto_pagado,
     fecha_pago,
     url_pdf,
     monto_facturado,
@@ -793,7 +794,7 @@ const createSolicitud = async (req, res) => {
     ?, ?, ?, ?, ?,
     ?, ?, ?, ?, ?,
     ?, ?, ?, ?, ?,
-    ?, ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?, ?
   );
 `;
 
@@ -819,10 +820,10 @@ const createSolicitud = async (req, res) => {
         : [{ fecha_pago: date, monto: monto_a_pagar }];
 
     if (formaPagoDB === "card" || formaPagoDB === "link") {
-      if (!String(selectedCard || "").trim()) {
+      if (!String(schedule[0]?.referencia_pago || "").trim()) {
         return res.status(400).json({
           ok: false,
-          message: "Falta selectedCard para card/link.",
+          message: "Falta referencia_pago en la primera fila del schedule.",
         });
       }
     }
@@ -1030,11 +1031,12 @@ const createSolicitud = async (req, res) => {
 
           await executeQuery(sql, params);
         } else {
-          // CARD: NO mandamos monto_pagado
+          // CARD: sí mandamos monto_pagado
           const params = [
             common.id_pago_dispersion,
             common.id_solicitud_proveedor,
             common.codigo_dispersion,
+            monto,
             common.fecha_pago,
             common.url_pdf,
             common.monto_facturado,
