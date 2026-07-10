@@ -239,8 +239,144 @@ const get_all_facturas = async (req, res) => {
   }
 };
 
+const get_hotel_edicion = async (req, res) => {
+  try {
+    const { id_booking } = req.query;
+
+    if (!id_booking) {
+      return res.status(400).json({
+        message: "Falta el parámetro id_booking",
+        data: null,
+      });
+    }
+
+    const hospedajeRows = await executeQuery(
+      `
+      SELECT
+        h.id_hospedaje,
+        h.id_hospedaje AS id_relacion,
+        h.id_hotel,
+        h.nombre_hotel AS hotel_reserva,
+        h.codigo_reservacion_hotel,
+        h.tipo_cuarto,
+        h.tipo_cuarto AS room,
+        h.comments,
+        h.nuevo_incluye_desayuno,
+        h.id_intermediario,
+        h.is_con_desayuno
+      FROM hospedajes h
+      WHERE h.id_booking =
+        CAST(? AS CHAR CHARACTER SET utf8mb3) COLLATE utf8mb3_general_ci
+      LIMIT 1;
+      `,
+      [id_booking],
+    );
+
+    if (!hospedajeRows || hospedajeRows.length === 0) {
+      return res.status(404).json({
+        message: "No se encontró hospedaje para este booking",
+        data: null,
+      });
+    }
+
+    const hospedaje = hospedajeRows[0];
+
+    const bookingRows = await executeQuery(
+      `
+      SELECT
+        b.id_booking,
+        b.id_servicio,
+        b.check_in,
+        b.check_out,
+        b.estado AS status_reserva,
+        b.estado,
+        b.total,
+        b.subtotal,
+        b.impuestos,
+        b.costo_total,
+        b.costo_subtotal,
+        b.costo_impuestos,
+        b.comentarios_internos,
+        b.tipo_pago AS metodo_pago_dinamico,
+        b.id_solicitud,
+        b.usuario_creador
+      FROM bookings b
+      WHERE b.id_booking =
+        CAST(? AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_0900_ai_ci
+      LIMIT 1;
+      `,
+      [id_booking],
+    );
+
+    if (!bookingRows || bookingRows.length === 0) {
+      return res.status(404).json({
+        message: "No se encontró booking",
+        data: null,
+      });
+    }
+
+    const booking = bookingRows[0];
+
+    const servicioRows = await executeQuery(
+      `
+      SELECT
+        s.id_agente
+      FROM servicios s
+      WHERE s.id_servicio = ?
+      LIMIT 1;
+      `,
+      [booking.id_servicio],
+    );
+
+    const viajerosRows = await executeQuery(
+      `
+      SELECT
+        MAX(CASE WHEN vh.is_principal = 1 THEN vh.id_viajero END) AS id_viajero_reserva,
+        GROUP_CONCAT(CASE WHEN vh.is_principal = 0 THEN vh.id_viajero END) AS viajeros_adicionales_reserva
+      FROM viajeros_hospedajes vh
+      WHERE vh.id_hospedaje =
+        CAST(? AS CHAR CHARACTER SET utf8mb3) COLLATE utf8mb3_general_ci;
+      `,
+      [hospedaje.id_hospedaje],
+    );
+
+    const servicio = servicioRows?.[0] || {};
+    const viajeros = viajerosRows?.[0] || {};
+
+    return res.status(200).json({
+      message: "Detalle de hotel obtenido correctamente",
+      data: {
+        ...booking,
+        ...hospedaje,
+
+        id_booking: booking.id_booking,
+        id_hospedaje: hospedaje.id_hospedaje,
+        id_relacion: hospedaje.id_hospedaje,
+
+        id_agente: servicio.id_agente || null,
+        nombre_agente: null,
+
+        id_viajero_reserva: viajeros.id_viajero_reserva || null,
+        viajeros_adicionales_reserva:
+          viajeros.viajeros_adicionales_reserva || "",
+
+        nombre_viajero_reservacion: null,
+        viajeros_acompañantes: null,
+      },
+    });
+  } catch (error) {
+    console.error("Error en get_hotel_edicion:", error);
+    return res.status(500).json({
+      message: error.message || "Error interno del servidor",
+      data: null,
+      error,
+    });
+  }
+};
+
 module.exports = {
   get_reservasClient_by_id_agente,
   filtro_solicitudes_y_reservas, //REPETIDO POR EMERGENCIA
   get_all_facturas,
+  get_hotel_edicion,
 };
