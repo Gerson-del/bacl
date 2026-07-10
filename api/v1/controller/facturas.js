@@ -270,6 +270,79 @@ const getFacturasDetalles = async (req, res) => {
   }
 };
 
+const desasociarReservaFactura = async (req, res) => {
+  try {
+    const id_factura = String(
+      req.body?.id_factura ?? req.query?.id_factura ?? "",
+    ).trim();
+
+    const id_relacion = String(
+      req.body?.id_relacion ?? req.query?.id_relacion ?? "",
+    ).trim();
+
+    if (!id_factura || !id_relacion) {
+      return res.status(400).json({
+        ok: false,
+        message: "Faltan parámetros",
+        required: ["id_factura", "id_relacion"],
+      });
+    }
+
+    const relacionActual = await executeQuery(
+      `
+      SELECT
+        id_factura,
+        id_item,
+        id_relacion,
+        monto
+      FROM items_facturas
+      WHERE id_factura = ?
+        AND id_relacion = ?;
+      `,
+      [id_factura, id_relacion],
+    );
+
+    if (!relacionActual?.length) {
+      return res.status(404).json({
+        ok: false,
+        message: "No existe relación entre esa factura y esa reserva",
+        data: {
+          id_factura,
+          id_relacion,
+        },
+      });
+    }
+
+    const result = await executeQuery(
+      `
+      DELETE FROM items_facturas
+      WHERE id_factura = ?
+        AND id_relacion = ?;
+      `,
+      [id_factura, id_relacion],
+    );
+
+    return res.status(200).json({
+      ok: true,
+      message: "Relación eliminada correctamente",
+      data: {
+        id_factura,
+        id_relacion,
+        filas_encontradas: relacionActual.length,
+        filas_eliminadas: result?.affectedRows ?? 0,
+      },
+    });
+  } catch (error) {
+    console.error("desasociarReservaFactura error:", error);
+
+    return res.status(500).json({
+      ok: false,
+      message: "Error al desasociar la factura de la reserva",
+      details: error?.message || error,
+    });
+  }
+};
+
 const readDetailsFactura = async (req, res) => {
   try {
     const { id_factura } = req.query;
@@ -2612,7 +2685,7 @@ const getQuitarDetalles = async (req, res) => {
           id_factura,
           deleted_items_facturas: del?.affectedRows ?? 0,
           updated_items: upd?.affectedRows ?? 0,
-          delet_saldos: delsaldos?.affectedRows ?? 0,
+          deleted_saldos: delsaldos?.affectedRows ?? 0,
         },
       });
     });
@@ -3057,6 +3130,7 @@ module.exports = {
   getfacturasPagoPendienteByAgente,
   updateDocumentosFacturas,
   getFacturasDetalles,
+  desasociarReservaFactura,
   getQuitarDetalles,
   agentes_report_fac,
   detalleFacturasCxC,
