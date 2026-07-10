@@ -67,6 +67,7 @@ router.post(
 router.put("/documentos", controller.updateDocumentosFacturas);
 router.get("/detalles_facturas", controller.getFacturasDetalles);
 router.post("/link-pago", controller.crearLinkPagoFacturas);
+router.get("/reservas_pendientes_facturar", controller.getReservasPendientesFacturar);
 module.exports = router;
 /**
  *

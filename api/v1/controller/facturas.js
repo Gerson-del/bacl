@@ -3100,6 +3100,51 @@ const crearLinkPagoFacturas = async (req, res) => {
   }
 };
 
+const getReservasPendientesFacturar = async (req, res) => {
+  const { id_agente } = req.query;
+
+  if (!id_agente) {
+    return res.status(400).json({ message: "El campo id_agente es requerido" });
+  }
+
+  try {
+    const data = await executeQuery(
+      `
+      SELECT
+        vw.id_relacion,
+        vw.id_confirmacion AS codigo_confirmacion,
+        vw.proveedor,
+        vw.type,
+        vw.nombre_agente,
+        vw.metodo_pago,
+        vw.total,
+        vw.check_in,
+        vw.check_out,
+        vw.created_at,
+        COALESCE(SUM(fi.monto), 0) AS total_facturado,
+        (vw.total - COALESCE(SUM(fi.monto), 0)) AS pendiente_facturar
+      FROM vw_details_booking vw
+        LEFT JOIN items_facturas fi ON fi.id_relacion = vw.id_relacion
+      WHERE vw.id_agente = ?
+      GROUP BY vw.id_relacion
+      HAVING (vw.total - COALESCE(SUM(fi.monto), 0)) > 0
+      `,
+      [id_agente],
+    );
+
+    return res.status(200).json({
+      message: "Reservas pendientes de facturar obtenidas correctamente",
+      data,
+    });
+  } catch (error) {
+    console.error("Error en getReservasPendientesFacturar:", error);
+    return res.status(500).json({
+      error: "Error al obtener reservas pendientes de facturar",
+      details: error.message || error,
+    });
+  }
+};
+
 module.exports = {
   create,
   getFullDetalles,
@@ -3131,6 +3176,7 @@ module.exports = {
   resumenFacturasCxC,
   all_facturas,
   crearLinkPagoFacturas,
+  getReservasPendientesFacturar,
 };
 
 //ya quedo "#$%&/()="
