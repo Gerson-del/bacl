@@ -735,7 +735,9 @@ const createSolicitud = async (req, res) => {
     moneda,
     concepto,
     metodo_de_pago,
+    id_tarjeta,
     referencia_pago,
+    id_titular,
     nombre_pagador,
     rfc_pagador,
     domicilio_pagador,
@@ -750,7 +752,7 @@ const createSolicitud = async (req, res) => {
     ?, ?, ?, ?, ?,
     ?, ?, ?, ?, ?,
     ?, ?, ?, ?, ?,
-    ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?
   );
 `;
     const insertPagoProveedorCardSql = `
@@ -774,7 +776,9 @@ const createSolicitud = async (req, res) => {
     moneda,
     concepto,
     metodo_de_pago,
+    id_tarjeta,
     referencia_pago,
+    id_titular,
     nombre_pagador,
     rfc_pagador,
     domicilio_pagador,
@@ -789,7 +793,7 @@ const createSolicitud = async (req, res) => {
     ?, ?, ?, ?, ?,
     ?, ?, ?, ?, ?,
     ?, ?, ?, ?, ?,
-    ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?
   );
 `;
 
@@ -802,7 +806,7 @@ const createSolicitud = async (req, res) => {
           : formaPagoDB === "card"
             ? "CARTA_ENVIADA"
             : formaPagoDB === "link"
-              ? "PAGADO_LINK"
+              ? "PAGADO LINK"
               : "CARTA_ENVIADA";
 
     // ✅ estatus_pagos en tu tabla es varchar(45), puedes dejarlo así:
@@ -815,19 +819,20 @@ const createSolicitud = async (req, res) => {
         : [{ fecha_pago: date, monto: monto_a_pagar }];
 
     if (formaPagoDB === "card" || formaPagoDB === "link") {
-      if (!selectedCard) {
+      if (!String(selectedCard || "").trim()) {
         return res.status(400).json({
           ok: false,
           message: "Falta selectedCard para card/link.",
         });
       }
-      const sum = schedule.reduce((acc, it) => acc + Number(it.monto || 0), 0);
-      if (Math.abs(sum - Number(monto_a_pagar)) > 0.01) {
-        return res.status(400).json({
-          ok: false,
-          message: `La suma del schedule (${sum.toFixed(2)}) debe igualar monto_a_pagar (${Number(monto_a_pagar).toFixed(2)})`,
-        });
-      }
+    }
+
+    const sum = schedule.reduce((acc, it) => acc + Number(it.monto || 0), 0);
+    if (Math.abs(sum - Number(monto_a_pagar)) > 0.01) {
+      return res.status(400).json({
+        ok: false,
+        message: `La suma del schedule (${sum.toFixed(2)}) debe igualar monto_a_pagar (${Number(monto_a_pagar).toFixed(2)})`,
+      });
     }
 
     if (!id_hospedaje) {
@@ -923,6 +928,10 @@ const createSolicitud = async (req, res) => {
                 ? `${fechaPago} ${horaPago}`
                 : fechaPago,
             monto: Number(it?.monto || 0),
+            id_tarjeta: it?.referencia_pago
+              ? String(it.referencia_pago)
+              : cardId || null,
+            id_titular: it?.idTitular ? Number(it.idTitular) : null,
           };
         })
         .filter(
@@ -970,7 +979,8 @@ const createSolicitud = async (req, res) => {
           moneda: monedaDB,
           concepto: conceptoBase,
           metodo_de_pago: formaPagoDB, // "link" o "card"
-          referencia_pago: selectedCard ? String(selectedCard) : null,
+          id_tarjeta: rows[i].id_tarjeta || null,
+          referencia_pago: rows[i].id_tarjeta || null,
           nombre_pagador: null,
           rfc_pagador: null,
           domicilio_pagador: null,
@@ -980,6 +990,7 @@ const createSolicitud = async (req, res) => {
           iva: null,
           total: monto,
           id_confirmacion: idConfirmacion,
+          id_titular: rows[i].id_titular || null,
         };
 
         if (formaPagoDB === "link") {
@@ -1004,7 +1015,9 @@ const createSolicitud = async (req, res) => {
             common.moneda,
             common.concepto,
             common.metodo_de_pago,
+            common.id_tarjeta,
             common.referencia_pago,
+            common.id_titular,
             common.nombre_pagador,
             common.rfc_pagador,
             common.domicilio_pagador,
@@ -1037,7 +1050,9 @@ const createSolicitud = async (req, res) => {
             common.moneda,
             common.concepto,
             common.metodo_de_pago,
+            common.id_tarjeta,
             common.referencia_pago,
+            common.id_titular,
             common.nombre_pagador,
             common.rfc_pagador,
             common.domicilio_pagador,
@@ -4317,6 +4332,12 @@ const getSolicitudes2 = async (req, res) => {
       fecha_emision_factura_end: clean(req.query.fecha_emision_factura_end),
       pag: Math.max(1, Number(req.query.pag ?? 1) || 1),
       limite: Math.max(1, Number(req.query.limite ?? 50) || 50),
+      // Estas las agrego neft
+      canal_de_reservacion: clean(req.query.canal_de_reservacion),
+      nombre_intermediario: clean(req.query.nombre_intermediario),
+      forma_pago_solicitada: clean(req.query.forma_pago_solicitada),
+      comentario_AP: clean(req.query.comentario_AP),
+      reserva_diferencia: clean(req.query.reserva_diferencia),
     };
 
     const bucketFiltro = clean(req.query.bucket);
@@ -4360,6 +4381,16 @@ const getSolicitudes2 = async (req, res) => {
         filters.pag,
         filters.limite,
         bucketFiltro ?? null,
+
+        // ***** Estas las agrego neft *****
+        // TODO: get_solicitudes_pago_v2 aún no tiene estos parámetros en el SP.
+        // Agregarlos aquí de nuevo (antes de p_bucket) cuando se actualice el SP en la BD.
+        // filters.canal_de_reservacion,
+        // filters.nombre_intermediario,
+        // filters.forma_pago_solicitada,
+        // filters.comentario_AP,
+        // filters.reserva_diferencia,
+        // *****Estas las agrego neft*****
       ],
     );
 
@@ -4395,6 +4426,10 @@ const getSolicitudes2 = async (req, res) => {
       ];
 
       return {
+        dias_vencimiento_factura: r.dias_vencimiento_factura,
+        fecha_creacion_factura_proveedor: r.fecha_creacion_factura_proveedor,
+        fecha_vencimiento_factura: r.fecha_vencimiento_factura,
+        vencimiento_credito_proveedor: r.vencimiento_credito_proveedor,
         // ── Campos planos del booking (usados por el front directamente) ──
         hotel: r.hotel,
         nombre_viajero: r.nombre_viajero,
@@ -4415,10 +4450,10 @@ const getSolicitudes2 = async (req, res) => {
         id_confirmacion: r.id_confirmacion,
         id_booking: r.id_booking,
         id_proveedor: r.id_proveedor,
-        id_intermediario: r.id_intermediario, // agregue esta
-        intermediario: r.intermediario, // igual agregue esta
         tipo_negociacion: r.tipo_negociacion,
         created_at: r.created_at,
+        id_intermediario: r.id_intermediario, // agregue esta
+        intermediario: r.intermediario, // igual agregue esta
         // ── Campos solicitud al nivel raíz (compatibilidad front) ──────────
         id_solicitud_proveedor: r.id_solicitud_proveedor,
         fecha_solicitud: r.fecha_solicitud,

@@ -7,6 +7,7 @@ const {
 } = require("../../../config/db");
 const { v4: uuidv4 } = require("uuid");
 const { CustomError } = require("../../../middleware/errorHandler");
+const { buscarTraslapes } = require("../../../lib/utils/traslapes");
 
 const create = async (req, res) => {
   //revisemos el body
@@ -1465,6 +1466,7 @@ const createFromOperaciones = async (req, res) => {
       { ...req.body, ...req.session },
       req.body.bandera,
     );
+
     res
       .status(201)
       .json({ message: "Solicitud created successfully", data: response });
@@ -1852,8 +1854,38 @@ const getDetallesConexionReservas = async (req, res) => {
   }
 };
 
+const checkTraslapes = async (req, res) => {
+  try {
+    // funcion que revisa si hay hoteles que se traslapan.
+    const { id_viajero, check_in, check_out } = req.query;
+
+    console.log("PARAMS:", { id_viajero, check_in, check_out });
+
+    if (!id_viajero || !check_in || !check_out) {
+      return res.status(400).json({
+        message: "Se requieren id_viajero, check_in y check_out",
+        data: null,
+      });
+    }
+
+    const traslapes = await buscarTraslapes(id_viajero, check_in, check_out);
+    console.log("TRASLAPES ENCONTRADOS:", JSON.stringify(traslapes));
+
+    return res.json({
+      message: traslapes.length > 0 ? "Existen traslapes" : "Sin traslapes",
+      data: { traslape: traslapes.length > 0, reservas: traslapes },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Error al verificar traslapes",
+      data: null,
+      error,
+    });
+  }
+};
+
 const verificarEmpalmeHotel = async (req, res) => {
-  const { viajero, fecha } = req.query;
+  const { id_viajero, fecha } = req.query;
 
   if (!viajero || !viajero.trim()) {
     return res.status(400).json({
@@ -1990,4 +2022,5 @@ module.exports = {
   detalles_reservas,
   verificarEmpalmeHotel,
   verificarEmpalmeHotel2,
+  checkTraslapes,
 };

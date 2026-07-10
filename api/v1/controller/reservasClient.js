@@ -5,7 +5,7 @@ const { CustomError } = require("../../../middleware/errorHandler");
 const get_reservasClient_by_id_agente = async (req, res) => {
   try {
     req.context.logStep(
-      "Llegando al endpoint de get_reservasClient_by_id_agente"
+      "Llegando al endpoint de get_reservasClient_by_id_agente",
     );
     const { user_id, usuario_creador } = req.query;
     console.log("user_id recibido:", user_id);
@@ -14,7 +14,7 @@ const get_reservasClient_by_id_agente = async (req, res) => {
         "Falta el parametro user_id",
         400,
         "ERROR_MISSING_PARAMETER",
-        null
+        null,
       );
     }
     let result = await executeSP("sp_get_reservasClient_by_id_cliente", [
@@ -23,7 +23,7 @@ const get_reservasClient_by_id_agente = async (req, res) => {
 
     const [{ restringido }] = await executeQuery(
       `select restringido from agentes where id_agente = ?`,
-      [user_id]
+      [user_id],
     );
 
     if (Boolean(restringido) && usuario_creador) {
@@ -135,6 +135,51 @@ const filtro_solicitudes_y_reservas = async (req, res) => {
     console.error("Error en filtro_solicitudes_y_reservas:", error);
   }
 };
+/*
+const edicion_filtro = async (req, res) => {
+  const { id } = req.query;
+
+  try {
+    const result = await executeSP("sp_filtrar_solicitudes_y_reservas2", [
+      codigo_reservacion || null,
+      startDate || null,
+      endDate || null,
+      hotel || null,
+      id_client || null,
+      client || null,
+      traveler || null,
+
+      reservationStage || null,
+      status_dic[status] || null,
+      reservante || null,
+      paymentMethod || null,
+
+      //statusPagoProveedor,
+      filterType || null,
+      // status_pago_proveedor,
+      // markup_start,
+      // markup_end,
+      p_criterio || 1,
+      id_solicitud || null,
+    ]);
+
+    if (!result || result.length === 0) {
+      return res.status(200).json({
+        message: "No se encontraron resultados para los filtros proporcionados",
+        data: [],
+      });
+    } else {
+      res.status(200).json({
+        message: "Resultados obtenidos correctamente",
+        data: result,
+      });
+    }
+  } catch (error) {
+    req.context.logStep("Error en la ejecucion del SP", error);
+    res.status(500).json({ error: "Internal Server Error", details: error });
+    console.error("Error en filtro_solicitudes_y_reservas:", error);
+  }
+};*/
 const get_all_facturas = async (req, res) => {
   try {
     req.context.logStep("Llegando al endpoint de sp_get_reservas_filtradas");
@@ -143,7 +188,7 @@ const get_all_facturas = async (req, res) => {
     // Nota: Verifica si id_client viene como objeto o si user_id está directo en req.body
     const user_id = req.body.id_client?.user_id || req.body.user_id;
     const tipo_reserva = req.body.tipo;
-    
+
     // Variables para el filtrado posterior (deben venir del request o definir valores por defecto)
     const restringido = req.body.restringido || false;
     const usuario_creador = req.body.usuario_creador;
@@ -156,7 +201,7 @@ const get_all_facturas = async (req, res) => {
         "Falta el parámetro user_id",
         400,
         "ERROR_MISSING_PARAMETER",
-        null
+        null,
       );
     }
 
@@ -165,12 +210,14 @@ const get_all_facturas = async (req, res) => {
     let result = await executeSP("sp_get_reservas_filtradas", [
       user_id,
       tipo_reserva,
-      "confirmada"
+      "confirmada",
     ]);
 
     // 4. Filtrado lógico en el Backend (si es necesario)
     if (restringido && usuario_creador) {
-      result = result.filter((item) => item.usuario_creador === usuario_creador);
+      result = result.filter(
+        (item) => item.usuario_creador === usuario_creador,
+      );
     }
 
     // 5. Respuesta exitosa
@@ -179,7 +226,6 @@ const get_all_facturas = async (req, res) => {
       message: "Reservas obtenidas correctamente",
       data: result,
     });
-
   } catch (error) {
     req.context.logStep("Error en la ejecución del SP", error);
     console.error("Detalle del error:", error);
@@ -196,5 +242,5 @@ const get_all_facturas = async (req, res) => {
 module.exports = {
   get_reservasClient_by_id_agente,
   filtro_solicitudes_y_reservas, //REPETIDO POR EMERGENCIA
-  get_all_facturas
+  get_all_facturas,
 };

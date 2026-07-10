@@ -739,9 +739,17 @@ const asignarFacturaPagos = async (req, res) => {
       }
 
       if (!donorKey) {
-        throw new Error(
-          `[LINK] No hay donador para meter 1 centavo en FACTURA ${id_factura} con saldo ${id_saldo}`,
+        // Sin donador real: se acepta 1 centavo de descuadre (ya se sumó a
+        // kTarget arriba) en vez de tronar toda la conciliación por un caso
+        // aislado. Diferencia máxima acumulable: MAX_IT centavos.
+        // throw new Error(
+        //   `[LINK] No hay donador para meter 1 centavo en FACTURA ${id_factura} con saldo ${id_saldo}`,
+        // );
+        log(
+          "[LINK][WARN] Sin donador para 1 centavo en FACTURA, se acepta descuadre",
+          { id_factura, id_saldo },
         );
+        return;
       }
 
       facMap.set(donorKey, (facMap.get(donorKey) ?? 0) - 1);
@@ -806,9 +814,28 @@ const asignarFacturaPagos = async (req, res) => {
       }
 
       if (!chosenItem) {
-        throw new Error(
-          `[LINK] No hay item/donador para meter 1 centavo en ITEMS de FACTURA ${id_factura} con saldo ${id_saldo}`,
+        // Sin item/donador real: se acepta 1 centavo de descuadre en vez de
+        // tronar toda la conciliación por un caso aislado. Se mete el
+        // centavo en el primer item de la factura sin quitarlo de ningún
+        // lado. Diferencia máxima acumulable: MAX_IT centavos.
+        // throw new Error(
+        //   `[LINK] No hay item/donador para meter 1 centavo en ITEMS de FACTURA ${id_factura} con saldo ${id_saldo}`,
+        // );
+        const fallbackItem = itemsFactura[0];
+        if (!fallbackItem) {
+          log(
+            "[LINK][WARN] Factura sin items, no se puede acomodar el centavo",
+            { id_factura, id_saldo },
+          );
+          return;
+        }
+        const kFallback = `${fallbackItem}|${id_saldo}`;
+        itemMap.set(kFallback, (itemMap.get(kFallback) ?? 0) + 1);
+        log(
+          "[LINK][WARN] Sin item/donador para 1 centavo, se acepta descuadre",
+          { id_factura, id_saldo, fallbackItem },
         );
+        return;
       }
 
       // +1 cent al target en chosenItem
@@ -1811,31 +1838,95 @@ const filtrarFacturas = async (req, res) => {
     endDate = null,
   } = req.body;
   try {
-    const result = await executeQuery(
-      "Call sp_filtrar_facturas(?, ?, ?, ?, ?, ?, ?, ?,?,?)",
-      [
-        estatusFactura || null,
-        id_factura || null,
-        id_cliente || null,
-        cliente || null,
-        uuid || null,
-        rfc || null,
-        page,
-        length,
-        startDate,
-        endDate,
-      ],
+    // Solo se agrega una condición al WHERE si el filtro realmente vino en el
+    // request; así MySQL usa un plan de índice específico para cada combinación
+    // en vez del plan genérico "(:param IS NULL OR col = :param)" del SP.
+    const conditions = [];
+    const params = [];
+
+    if (estatusFactura && String(estatusFactura).trim().toUpperCase() !== "TODAS") {
+      conditions.push("f.estado = ?");
+      params.push(estatusFactura);
+    }
+    if (id_factura) {
+      conditions.push("f.id_factura LIKE CONCAT('%', ?, '%')");
+      params.push(id_factura);
+    }
+    if (id_cliente) {
+      conditions.push("f.usuario_creador = ?");
+      params.push(id_cliente);
+    }
+    if (cliente) {
+      conditions.push("ad.nombre LIKE CONCAT('%', ?, '%')");
+      params.push(cliente);
+    }
+    if (uuid) {
+      conditions.push("f.uuid_factura LIKE CONCAT('%', ?, '%')");
+      params.push(uuid);
+    }
+    if (rfc) {
+      conditions.push("f.rfc LIKE CONCAT('%', ?, '%')");
+      params.push(rfc);
+    }
+    if (startDate) {
+      conditions.push("f.created_at >= CONCAT(DATE(?), ' 00:00:00')");
+      params.push(startDate);
+    }
+    if (endDate) {
+      conditions.push("f.created_at <= CONCAT(DATE(?), ' 23:59:59')");
+      params.push(endDate);
+    }
+
+    const whereSql = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+
+    // ad solo hace falta en la query de datos (para nombre/razon_social)
+    // y en el COUNT si se está filtrando por cliente.
+    const joinSql = `LEFT JOIN agente_details ad ON ad.id_agente = f.usuario_creador`;
+
+    const pageNum = Number(page);
+    const lengthNum = Number(length);
+    const hasPagination =
+      Number.isFinite(pageNum) && Number.isFinite(lengthNum) && lengthNum > 0;
+    const safePage = Math.max(1, Math.trunc(pageNum) || 1);
+    const safeLength = Math.trunc(lengthNum) || 20;
+    const offset = (safePage - 1) * safeLength;
+
+    const data = await executeQuery(
+      `
+      SELECT f.*, ad.nombre, ad.razon_social
+      FROM facturas f
+      ${joinSql}
+      ${whereSql}
+      ORDER BY f.created_at DESC, f.id_factura DESC
+      ${hasPagination ? `LIMIT ${safeLength} OFFSET ${offset}` : ""}
+      `,
+      params,
     );
 
-    if (result[0].length == 0) {
+    if (data.length === 0) {
       return res.status(404).json({
         message: "No se encontraron facturas con el parametro deseado",
       });
     }
+
+    let metadata = null;
+    if (hasPagination) {
+      const countRows = await executeQuery(
+        `
+        SELECT COUNT(*) AS total
+        FROM facturas f
+        ${cliente ? joinSql : ""}
+        ${whereSql}
+        `,
+        params,
+      );
+      metadata = countRows[0];
+    }
+
     return res.status(200).json({
       message: "Facturas filtradas correctamente",
-      data: result[0],
-      metadata: result[1] ? result[1][0] : null, // Asumiendo que el SP devuelve metadata en el segundo result set
+      data,
+      metadata,
     });
   } catch (error) {
     return res.status(500).json({
