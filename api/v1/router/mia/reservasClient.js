@@ -11,5 +11,5 @@ router.post(
 );
 // router.post("/edicion", controller.edicion_filtro);
 router.post("/todas_las_reservas", controller.get_all_facturas);
-
+router.get("/hotel_edicion", controller.get_hotel_edicion);
 module.exports = router;
