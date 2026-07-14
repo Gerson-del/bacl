@@ -4,7 +4,7 @@ const controller = require("../../controller/facturas");
 const v2 = require("../../../../v2/controller/facturas.controller");
 const { hasPermission } = require("../../../../middleware/verifyPermission");
 
-router.post("/filtrarFacturas", controller.filtrarFacturas);
+router.post("/filtrarFacturas", controller.filtrarFacturas); // legacy
 router.post("/facturas_completas", controller.all_facturas);
 router.post(
   "/",
@@ -67,6 +67,12 @@ router.post(
 router.put("/documentos", controller.updateDocumentosFacturas);
 router.get("/detalles_facturas", controller.getFacturasDetalles);
 router.post("/link-pago", controller.crearLinkPagoFacturas);
+// ── nuevos ────────────────────────────────────────────────────────────────────
+router.post("/filtrar", controller.filtrarFacturas);
+router.get("/reservas/pendientes", controller.getReservasPendientesFacturar);
+router.get("/items/pendientes", controller.getItemsPendientesFacturar);
+router.post("/items/asignar", controller.asignarItemsFactura);
+// ─────────────────────────────────────────────────────────────────────────────
 module.exports = router;
 /**
  *
