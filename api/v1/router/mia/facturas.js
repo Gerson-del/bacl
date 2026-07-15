@@ -72,6 +72,7 @@ router.post("/filtrar", controller.filtrarFacturas);
 router.get("/reservas/pendientes", controller.getReservasPendientesFacturar);
 router.get("/items/pendientes", controller.getItemsPendientesFacturar);
 router.post("/items/asignar", controller.asignarItemsFactura);
+router.get("/detalle", controller.getDetalleFactura);
 // ─────────────────────────────────────────────────────────────────────────────
 module.exports = router;
 /**
