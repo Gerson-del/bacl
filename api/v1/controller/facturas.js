@@ -7,6 +7,9 @@ const {
 const model = require("../model/facturas");
 const facturasItemsService = require("../../modules/facturas/items/facturasItems.service");
 const facturasService = require("../../modules/facturas/facturas.service");
+const facturasReservasService = require("../../modules/facturas/reservas/facturasReservas.service");
+const facturasSaldosService = require("../../modules/facturas/saldos/facturasSaldos.service");
+const facturasPagosService = require("../../modules/facturas/pagos/facturasPagos.service");
 const { v4: uuidv4 } = require("uuid");
 const { get } = require("../router/mia/reservasClient");
 const { ShortError } = require("../../../middleware/errorHandler");
@@ -151,9 +154,6 @@ const getfacturasPagoPendienteByAgente = async (req, res) => {
 
 const getFacturasDetalles = async (req, res) => {
   try {
-    console.log("📦 recibido get_detalles_factura (normalizando a JSON array)");
-
-    // Acepta: ?id_buscar=..., ?id_factura=..., o body { id_buscar / id_factura }
     const rawBuscar =
       req.query.id_factura ??
       req.query.id_buscar ??
@@ -163,7 +163,6 @@ const getFacturasDetalles = async (req, res) => {
       req.body?.id_raw ??
       "";
 
-    // --- Normalizar a JSON array de strings ---
     const toJsonArrayString = (input) => {
       if (Array.isArray(input)) {
         const arr = input
@@ -3193,11 +3192,9 @@ const asignarItemsFactura = async (req, res) => {
           totalAsignar += montoAsignar;
         }
       } else {
-        return res
-          .status(400)
-          .json({
-            message: `Tipo inválido: ${sel.tipo}. Use "completa" o "parcial"`,
-          });
+        return res.status(400).json({
+          message: `Tipo inválido: ${sel.tipo}. Use "completa" o "parcial"`,
+        });
       }
     }
 
@@ -3224,6 +3221,36 @@ const asignarItemsFactura = async (req, res) => {
     console.error("Error en asignarItemsFactura:", error);
     return res.status(error.statusCode ?? 500).json({
       error: "Error al asignar items a la factura",
+      details: error.message || error,
+    });
+  }
+};
+
+const getDetalleFactura = async (req, res) => {
+  const { id_factura } = req.query;
+
+  if (!id_factura) {
+    return res.status(400).json({ message: "id_factura es requerido" });
+  }
+
+  try {
+    const { reservas, saldos, pagos } = await runTransaction(async (conn) => {
+      const [reservas, saldos, pagos] = await Promise.all([
+        facturasReservasService.getReservasByFactura(id_factura, conn),
+        facturasSaldosService.getSaldosByFactura(id_factura, conn),
+        facturasPagosService.getPagosByFactura(id_factura, conn),
+      ]);
+      return { reservas, saldos, pagos };
+    });
+
+    return res.status(200).json({
+      message: "Detalle de factura obtenido correctamente",
+      data: { reservas, saldos, pagos },
+    });
+  } catch (error) {
+    console.error("Error en getDetalleFactura:", error);
+    return res.status(error.statusCode ?? 500).json({
+      error: "Error al obtener detalle de factura",
       details: error.message || error,
     });
   }
@@ -3328,6 +3355,7 @@ module.exports = {
   getReservasPendientesFacturar,
   getItemsPendientesFacturar,
   asignarItemsFactura,
+  getDetalleFactura,
 };
 
 //ya quedo "#$%&/()="
