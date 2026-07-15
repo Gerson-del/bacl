@@ -141,36 +141,77 @@ router.get("/cupon/vuelo", async (req, res) => {
     const { id_viaje_aereo } = req.query;
 
     if (!id_viaje_aereo) {
-      return res.status(400).json({ error: "id_viaje_aereo es requerido" });
+      return res.status(400).json({
+        error: "id_viaje_aereo es requerido",
+      });
     }
 
-    const [reservaData] = await executeQuery(
-      `SELECT vw.*, va.ciudad_origen, va.ciudad_destino, vw.id_confirmacion as codigo_confirmacion
-       FROM vw_details_booking vw 
-       INNER JOIN viajes_aereos va ON va.id_viaje_aereo = vw.id_relacion 
-       WHERE vw.id_relacion = ?`,
+    const [reserva] = await executeQuery(
+      `
+      SELECT
+        vw.total,
+        va.id_viaje_aereo,
+        vw.id_relacion,
+        va.ciudad_origen AS origen,
+        va.ciudad_destino AS destino,
+        va.trip_type AS tipo,
+        va.codigo_confirmacion,
+        vw.id_solicitud,
+        vw.nombre_viajero AS viajero
+      FROM vw_details_booking vw
+      INNER JOIN viajes_aereos va
+        ON va.id_viaje_aereo = vw.id_relacion
+      WHERE vw.id_solicitud = ?
+      `,
       [id_viaje_aereo],
-      // ["jiuhgyktfrhdfgyuhjikolp"],
     );
 
-    if (!reservaData) {
-      return res.status(404).json({ error: "Vuelo no encontrado" });
+    if (!reserva) {
+      return res.status(404).json({
+        error: "Vuelo no encontrado",
+      });
     }
 
     const vuelos = await executeQuery(
-      `SELECT * FROM vuelos WHERE id_viaje_aereo = ?`,
-      [id_viaje_aereo],
+      `
+      SELECT
+        eq_mano,
+        eq_personal,
+        eq_documentado,
+        id_vuelo,
+        flight_number,
+        airline,
+        departure_airport,
+        departure_city,
+        departure_date,
+        departure_time,
+        arrival_airport,
+        arrival_city,
+        arrival_date,
+        arrival_time,
+        stops AS parada,
+        seat_number,
+        fly_type,
+        comentarios,
+        rate_type
+      FROM vuelos
+      WHERE id_viaje_aereo = ?
+      ORDER BY id_vuelo
+      `,
+      [reserva.id_relacion],
     );
 
     res.status(200).json({
-      message: "ok",
+      message: "done",
       data: {
-        ...reservaData,
+        ...reserva,
         vuelos,
+        type: "vuelo",
       },
     });
   } catch (error) {
-    console.error("Error en /cupon/vuelo:", error);
+    console.error(error);
+
     res.status(500).json({
       ok: false,
       error: error.message || "Error obteniendo cupón de vuelo",
@@ -291,7 +332,7 @@ router.get("/cupon/auto", async (req, res) => {
         LEFT JOIN bookings AS b
           ON b.id_booking = ra.id_booking
 
-        WHERE ra.id_renta_autos = ?
+        WHERE b.id_solicitud = ?
         LIMIT 1
       `,
       [id_renta_autos],
