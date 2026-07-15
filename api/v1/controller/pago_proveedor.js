@@ -633,7 +633,6 @@ const createSolicitud = async (req, res) => {
       comments_cxp,
       date,
       paymentType, // credit (si aplica)
-      selectedCard,
       id_hospedaje,
       usuario_creador,
       paymentSchedule = [],
@@ -820,10 +819,14 @@ const createSolicitud = async (req, res) => {
         : [{ fecha_pago: date, monto: monto_a_pagar }];
 
     if (formaPagoDB === "card" || formaPagoDB === "link") {
-      if (!String(schedule[0]?.referencia_pago || "").trim()) {
+      const hasReferencia = (
+        Array.isArray(paymentSchedule) ? paymentSchedule : []
+      ).some((it) => String(it?.referencia_pago || "").trim());
+      if (!hasReferencia) {
         return res.status(400).json({
           ok: false,
-          message: "Falta referencia_pago en la primera fila del schedule.",
+          message:
+            "Falta referencia_pago en los items del paymentSchedule para card/link.",
         });
       }
     }
@@ -855,10 +858,11 @@ const createSolicitud = async (req, res) => {
         ? normalizeHora(schedule?.[0]?.hora) || normalizeHora(hora)
         : normalizeHora(hora);
 
-    // ✅ tarjeta SOLO card/link; transfer/credit => NULL
+    // Para card/link la tarjeta viene por item en paymentSchedule; aquí tomamos
+    // la del primer item como referencia para el SP.
     const cardId =
       formaPagoDB === "card" || formaPagoDB === "link"
-        ? String(selectedCard)
+        ? String(paymentSchedule?.[0]?.referencia_pago || "") || null
         : null;
 
     const documentoId = String(documento ?? "").trim() || null;
@@ -929,9 +933,7 @@ const createSolicitud = async (req, res) => {
                 ? `${fechaPago} ${horaPago}`
                 : fechaPago,
             monto: Number(it?.monto || 0),
-            id_tarjeta: it?.referencia_pago
-              ? String(it.referencia_pago)
-              : cardId || null,
+            id_tarjeta: String(it?.referencia_pago || "") || null,
             id_titular: it?.idTitular ? Number(it.idTitular) : null,
           };
         })

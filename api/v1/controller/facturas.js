@@ -5,6 +5,8 @@ const {
   executeQuery,
 } = require("../../../config/db");
 const model = require("../model/facturas");
+const facturasItemsService = require("../../modules/facturas/items/facturasItems.service");
+const facturasService = require("../../modules/facturas/facturas.service");
 const { v4: uuidv4 } = require("uuid");
 const { get } = require("../router/mia/reservasClient");
 const { ShortError } = require("../../../middleware/errorHandler");
@@ -1917,7 +1919,10 @@ const filtrarFacturas = async (req, res) => {
     const conditions = [];
     const params = [];
 
-    if (estatusFactura && String(estatusFactura).trim().toUpperCase() !== "TODAS") {
+    if (
+      estatusFactura &&
+      String(estatusFactura).trim().toUpperCase() !== "TODAS"
+    ) {
       conditions.push("f.estado = ?");
       params.push(estatusFactura);
     }
@@ -1930,7 +1935,7 @@ const filtrarFacturas = async (req, res) => {
       params.push(id_cliente);
     }
     if (cliente) {
-      conditions.push("ad.nombre LIKE CONCAT('%', ?, '%')");
+      conditions.push("f.nombre_cliente LIKE CONCAT('%', ?, '%')");
       params.push(cliente);
     }
     if (uuid) {
@@ -1950,11 +1955,9 @@ const filtrarFacturas = async (req, res) => {
       params.push(endDate);
     }
 
-    const whereSql = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
-
-    // ad solo hace falta en la query de datos (para nombre/razon_social)
-    // y en el COUNT si se está filtrando por cliente.
-    const joinSql = `LEFT JOIN agente_details ad ON ad.id_agente = f.usuario_creador`;
+    const whereSql = conditions.length
+      ? `WHERE ${conditions.join(" AND ")}`
+      : "";
 
     const pageNum = Number(page);
     const lengthNum = Number(length);
@@ -1966,9 +1969,8 @@ const filtrarFacturas = async (req, res) => {
 
     const data = await executeQuery(
       `
-      SELECT f.*, ad.nombre, ad.razon_social
+      SELECT f.*
       FROM facturas f
-      ${joinSql}
       ${whereSql}
       ORDER BY f.created_at DESC, f.id_factura DESC
       ${hasPagination ? `LIMIT ${safeLength} OFFSET ${offset}` : ""}
@@ -1988,7 +1990,6 @@ const filtrarFacturas = async (req, res) => {
         `
         SELECT COUNT(*) AS total
         FROM facturas f
-        ${cliente ? joinSql : ""}
         ${whereSql}
         `,
         params,
@@ -3106,6 +3107,193 @@ const crearLinkPagoFacturas = async (req, res) => {
   }
 };
 
+const asignarItemsFactura = async (req, res) => {
+  const { id_factura, seleccion } = req.body;
+
+  if (!id_factura) {
+    return res.status(400).json({ message: "id_factura es requerido" });
+  }
+  if (!Array.isArray(seleccion) || seleccion.length === 0) {
+    return res
+      .status(400)
+      .json({ message: "No has seleccionado items para asignar" });
+  }
+
+  try {
+    // 1. Verificar que la factura existe y tiene saldo disponible
+    const factura = await facturasService.getById(id_factura);
+    const saldoDisponible = Number(factura.saldo_x_aplicar_items);
+
+    // 2. Traer items pendientes del DB para todos los id_relacion
+    const idsRelacion = [...new Set(seleccion.map((s) => s.id_relacion))];
+    const pendientes =
+      await facturasItemsService.getPendientesByRelaciones(idsRelacion);
+
+    const pendientesMap = Object.fromEntries(
+      pendientes.map((p) => [p.id_item, p]),
+    );
+    const pendientesPorRelacion = pendientes.reduce((acc, p) => {
+      if (!acc[p.id_relacion]) acc[p.id_relacion] = [];
+      acc[p.id_relacion].push(p);
+      return acc;
+    }, {});
+
+    // 3. Construir inserts y validar
+    const inserts = [];
+    let totalAsignar = 0;
+
+    for (const sel of seleccion) {
+      if (!sel.id_relacion || !sel.tipo) {
+        return res
+          .status(400)
+          .json({ message: "Cada selección requiere id_relacion y tipo" });
+      }
+
+      if (sel.tipo === "completa") {
+        const itemsRelacion = pendientesPorRelacion[sel.id_relacion] ?? [];
+        if (itemsRelacion.length === 0) {
+          return res.status(400).json({
+            message: `No hay items pendientes para la relación ${sel.id_relacion}`,
+          });
+        }
+        for (const item of itemsRelacion) {
+          const monto = Number(item.monto_por_facturar);
+          inserts.push({ id_item: item.id_item, id_factura, monto });
+          totalAsignar += monto;
+        }
+      } else if (sel.tipo === "parcial") {
+        if (!Array.isArray(sel.items) || sel.items.length === 0) {
+          return res.status(400).json({
+            message: `La selección parcial de ${sel.id_relacion} requiere items`,
+          });
+        }
+        for (const item of sel.items) {
+          const db = pendientesMap[item.id_item];
+          if (!db) {
+            return res.status(400).json({
+              message: `El item ${item.id_item} no existe o ya está completamente facturado`,
+            });
+          }
+          const montoAsignar = Number(item.monto_asignar);
+          if (montoAsignar <= 0) {
+            return res.status(400).json({
+              message: `monto_asignar del item ${item.id_item} debe ser mayor a 0`,
+            });
+          }
+          if (montoAsignar > Number(db.monto_por_facturar)) {
+            return res.status(400).json({
+              message: `monto_asignar (${montoAsignar}) del item ${item.id_item} supera el pendiente (${db.monto_por_facturar})`,
+            });
+          }
+          inserts.push({
+            id_item: item.id_item,
+            id_factura,
+            monto: montoAsignar,
+          });
+          totalAsignar += montoAsignar;
+        }
+      } else {
+        return res
+          .status(400)
+          .json({
+            message: `Tipo inválido: ${sel.tipo}. Use "completa" o "parcial"`,
+          });
+      }
+    }
+
+    // 4. Validar que el total no supere el saldo disponible de la factura
+    if (totalAsignar > saldoDisponible) {
+      return res.status(400).json({
+        message: `El total a asignar (${totalAsignar.toFixed(2)}) supera el saldo disponible de la factura (${saldoDisponible.toFixed(2)})`,
+      });
+    }
+
+    // 5. Insertar en transacción
+    await runTransaction(async (conn) => {
+      for (const ins of inserts) {
+        await facturasItemsService.asignarItemAFactura(ins, conn);
+      }
+    });
+
+    return res.status(200).json({
+      message: "Items asignados correctamente",
+      data: inserts,
+      metadata: { total_asignado: totalAsignar },
+    });
+  } catch (error) {
+    console.error("Error en asignarItemsFactura:", error);
+    return res.status(error.statusCode ?? 500).json({
+      error: "Error al asignar items a la factura",
+      details: error.message || error,
+    });
+  }
+};
+
+const getItemsPendientesFacturar = async (req, res) => {
+  const { id_relacion } = req.query;
+
+  try {
+    const data =
+      await facturasItemsService.getPendientesByRelaciones(id_relacion);
+
+    return res.status(200).json({
+      message: "Items pendientes de facturar obtenidos correctamente",
+      data,
+    });
+  } catch (error) {
+    console.error("Error en getItemsPendientesFacturar:", error);
+    return res.status(error.statusCode ?? 500).json({
+      error: "Error al obtener items pendientes de facturar",
+      details: error.message || error,
+    });
+  }
+};
+
+const getReservasPendientesFacturar = async (req, res) => {
+  const { id_agente } = req.query;
+
+  if (!id_agente) {
+    return res.status(400).json({ message: "El campo id_agente es requerido" });
+  }
+
+  try {
+    const data = await executeQuery(
+      `
+      SELECT
+        vw.id_relacion,
+        vw.id_confirmacion AS codigo_confirmacion,
+        vw.proveedor,
+        vw.type,
+        vw.nombre_agente,
+        vw.metodo_pago,
+        vw.total,
+        vw.check_in,
+        vw.check_out,
+        vw.created_at,
+        COALESCE(SUM(fi.monto), 0) AS total_facturado,
+        (vw.total - COALESCE(SUM(fi.monto), 0)) AS pendiente_facturar
+      FROM vw_details_booking vw
+        LEFT JOIN items_facturas fi ON fi.id_relacion = vw.id_relacion
+      WHERE vw.id_agente = ? AND vw.estado <> "Cancelada"
+      GROUP BY vw.id_relacion
+      HAVING (vw.total - COALESCE(SUM(fi.monto), 0)) > 0
+      `,
+      [id_agente],
+    );
+
+    return res.status(200).json({
+      message: "Reservas pendientes de facturar obtenidas correctamente",
+      data,
+    });
+  } catch (error) {
+    console.error("Error en getReservasPendientesFacturar:", error);
+    return res.status(500).json({
+      error: "Error al obtener reservas pendientes de facturar",
+      details: error.message || error,
+    });
+  }
+};
+
 module.exports = {
   create,
   getFullDetalles,
@@ -3137,6 +3325,9 @@ module.exports = {
   resumenFacturasCxC,
   all_facturas,
   crearLinkPagoFacturas,
+  getReservasPendientesFacturar,
+  getItemsPendientesFacturar,
+  asignarItemsFactura,
 };
 
 //ya quedo "#$%&/()="
