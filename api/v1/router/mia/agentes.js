@@ -98,9 +98,12 @@ router.get("/all", async (req, res) => {
       values.push(`%${query.client.split("").join("%")}%`);
     }
 
+    conditions.push("active = ?");
+    values.push(1);
+
     const queryget = `
 SELECT * FROM agente_details
-${conditions.length ? " WHERE " + conditions.join(" AND ") : ""}
+WHERE ${conditions.join(" AND ")}
 ORDER BY created_at desc`;
     const response = await executeQuery(queryget, values);
     res.status(200).json(response);
