@@ -759,7 +759,6 @@ const createSolicitud = async (req, res) => {
     id_pago_dispersion,
     id_solicitud_proveedor,
     codigo_dispersion,
-    monto_pagado,
     fecha_pago,
     url_pdf,
     monto_facturado,
@@ -793,7 +792,7 @@ const createSolicitud = async (req, res) => {
     ?, ?, ?, ?, ?,
     ?, ?, ?, ?, ?,
     ?, ?, ?, ?, ?,
-    ?, ?, ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?
   );
 `;
 
@@ -1038,7 +1037,6 @@ const createSolicitud = async (req, res) => {
             common.id_pago_dispersion,
             common.id_solicitud_proveedor,
             common.codigo_dispersion,
-            monto,
             common.fecha_pago,
             common.url_pdf,
             common.monto_facturado,
