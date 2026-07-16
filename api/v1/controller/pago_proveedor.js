@@ -759,6 +759,7 @@ const createSolicitud = async (req, res) => {
     id_pago_dispersion,
     id_solicitud_proveedor,
     codigo_dispersion,
+    monto_pagado,
     fecha_pago,
     url_pdf,
     monto_facturado,
@@ -792,7 +793,7 @@ const createSolicitud = async (req, res) => {
     ?, ?, ?, ?, ?,
     ?, ?, ?, ?, ?,
     ?, ?, ?, ?, ?,
-    ?, ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?, ?
   );
 `;
 
@@ -818,13 +819,14 @@ const createSolicitud = async (req, res) => {
         : [{ fecha_pago: date, monto: monto_a_pagar }];
 
     if (formaPagoDB === "card" || formaPagoDB === "link") {
-      const hasReferencia = (Array.isArray(paymentSchedule) ? paymentSchedule : []).some(
-        (it) => String(it?.referencia_pago || "").trim(),
-      );
+      const hasReferencia = (
+        Array.isArray(paymentSchedule) ? paymentSchedule : []
+      ).some((it) => String(it?.referencia_pago || "").trim());
       if (!hasReferencia) {
         return res.status(400).json({
           ok: false,
-          message: "Falta referencia_pago en los items del paymentSchedule para card/link.",
+          message:
+            "Falta referencia_pago en los items del paymentSchedule para card/link.",
         });
       }
     }
@@ -1031,11 +1033,12 @@ const createSolicitud = async (req, res) => {
 
           await executeQuery(sql, params);
         } else {
-          // CARD: NO mandamos monto_pagado
+          // CARD: sí mandamos monto_pagado
           const params = [
             common.id_pago_dispersion,
             common.id_solicitud_proveedor,
             common.codigo_dispersion,
+            monto,
             common.fecha_pago,
             common.url_pdf,
             common.monto_facturado,
