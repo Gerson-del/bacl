@@ -34,7 +34,7 @@
     "express": "^4.21.2",
     "follow-redirects": "^1.15.11",
     "jsonwebtoken": "^9.0.2",
-    "morgan": "^1.10.0",
+    "morgan": "^1.10.0",git br
     "multer": "^2.1.1",
     "mysql2": "^3.12.0",
     "nodemon": "^3.1.10",
