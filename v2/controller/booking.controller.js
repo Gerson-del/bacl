@@ -8,9 +8,74 @@ const getCupon = async (id) => {
       throw new CustomError("El id_solicitud es requerido", 400);
     }
     const [reserva] = await executeQuery(
-      `SELECT type, id_relacion FROM vw_details_booking WHERE id_solicitud = ? and estado <> "Cancelada"`,
+      `SELECT type, id_relacion FROM vw_details_booking WHERE id_solicitud_client = ? and estado <> "Cancelada"`,
       [id],
     );
+
+    console.log("\n\n\n\n\n\njhgfdftyghjk");
+    console.log(reserva);
+
+    if (!reserva || reserva.type == "hotel") {
+      const [resultQuery] = await executeQuery(
+        `
+        SELECT
+    COALESCE(vdb.check_in, s.check_in) AS check_in,
+    COALESCE(vdb.check_out, s.check_out) AS check_out,
+    COALESCE(vdb.id_confirmacion, "") AS codigo_confirmacion,
+    COALESCE(hp.comments,"") AS comentarios,
+    COALESCE(vdb.id_proveedor_service, s.id_hotel) AS id_hotel_resuelto,
+    ho.direccion AS direccion,
+    s.viajeros_adicionales AS "acompanantes",
+    v.primer_nombre,
+    v.segundo_nombre,
+    v.apellido_paterno,
+    v.apellido_materno,
+    COALESCE(vdb.id_solicitud_client, s.id_solicitud) AS id_solicitud,
+    COALESCE(vdb.tipo_cuarto_vuelo, s.room) AS room,
+    ho.nombre as hotel,
+    COALESCE(s.is_con_desayuno, hp.is_con_desayuno) AS incluye_desayuno,
+    COALESCE(vdb.costo_total, s.total) AS total_solicitud,
+    COALESCE(vdb.created_at, s.created_at) AS created_at_solicitud,
+    'hotel' AS type
+FROM solicitudes s
+LEFT JOIN vw_details_booking vdb
+    ON vdb.id_solicitud_client = s.id_solicitud
+LEFT JOIN hospedajes hp
+    ON hp.id_hospedaje = vdb.id_relacion
+LEFT JOIN hoteles ho
+    ON  ho.id_hotel = COALESCE(vdb.id_proveedor_service, s.id_hotel)
+LEFT JOIN viajeros v
+    ON v.id_viajero = COALESCE(vdb.id_viajero, s.id_viajero)
+WHERE (
+	vdb.estado <> 'cancelada'
+    OR
+    s.status << "canceled"
+) AND s.id_solicitud = ?`,
+        [id],
+      );
+
+      const {
+        primer_nombre,
+        segundo_nombre,
+        apellido_paterno,
+        apellido_materno,
+        acompanantes,
+        ...rest
+      } = resultQuery;
+
+      return {
+        ...rest,
+        acompañantes: (acompanantes || []).join(","),
+        huesped: [
+          primer_nombre,
+          segundo_nombre,
+          apellido_paterno,
+          apellido_materno,
+        ]
+          .filter(Boolean)
+          .join(" "),
+      };
+    }
 
     if (reserva.type == "flyght") {
       const [resultQuery, vuelos] = await Promise.all([
@@ -79,48 +144,6 @@ left join bookings b on b.id_booking = ra.id_booking where ra.id_renta_autos = ?
           apellido_paterno,
           apellido_materno,
         ]
-          .filter(Boolean)
-          .join(" "),
-      };
-    }
-    if (reserva.type == "hotel") {
-      const [resultQuery] = await executeQuery(
-        `
-        SELECT
-    COALESCE(vdb.check_in, s.check_in) AS check_in,
-    COALESCE(vdb.check_out, s.check_out) AS check_out,
-    COALESCE(vdb.id_confirmacion, "") AS codigo_confirmacion,
-    COALESCE(hp.comments,"") AS comentarios,
-    COALESCE(vdb.id_proveedor_service, s.id_hotel) AS id_hotel_resuelto,
-    ho.direccion AS direccion,
-    s.viajeros_adicionales AS "acompañantes",
-    COALESCE(vdb.nombre_viajero, s.nombre_viajero) AS huesped,
-    COALESCE(vdb.id_solicitud_client, s.id_solicitud) AS id_solicitud,
-    COALESCE(vdb.tipo_cuarto_vuelo, s.room) AS room,
-    COALESCE(s.is_con_desayuno, hp.is_con_desayuno) AS incluye_desayuno,
-    COALESCE(vdb.costo_total, s.total) AS total_solicitud,
-    COALESCE(vdb.created_at, s.created_at) AS created_at_solicitud,
-    'hotel' AS type
-FROM solicitudes s
-LEFT JOIN vw_details_booking vdb
-    ON vdb.id_solicitud_client = s.id_solicitud
-LEFT JOIN hospedajes hp
-    ON hp.id_hospedaje = vdb.id_relacion
-LEFT JOIN hoteles ho
-    ON hp.id_hotel = ho.id_hotel
-WHERE (
-	vdb.estado <> 'cancelada'
-    OR
-    s.status << "canceled"
-)`,
-        [reserva.id_solicitud],
-      );
-      const { check_in, check_out, codigo_confirmacion, comentarios, ...rest } =
-        resultQuery;
-      return {
-        ...rest,
-        type: "hotel",
-        viajero: [check_in, check_out, codigo_confirmacion, comentarios]
           .filter(Boolean)
           .join(" "),
       };
