@@ -17,40 +17,74 @@ const getCupon = async (id) => {
 
     if (!reserva || reserva.type == "hotel") {
       const [resultQuery] = await executeQuery(
-        `
-        SELECT
+        ` SELECT
     COALESCE(vdb.check_in, s.check_in) AS check_in,
     COALESCE(vdb.check_out, s.check_out) AS check_out,
     COALESCE(vdb.id_confirmacion, "") AS codigo_confirmacion,
-    COALESCE(hp.comments,"") AS comentarios,
+    COALESCE(hp.comments, "") AS comentarios,
     COALESCE(vdb.id_proveedor_service, s.id_hotel) AS id_hotel_resuelto,
     ho.direccion AS direccion,
-    s.viajeros_adicionales AS "acompanantes",
+
+    COALESCE(acomp.acompanantes, s.viajeros_adicionales, "") AS acompanantes,
+
     v.primer_nombre,
     v.segundo_nombre,
     v.apellido_paterno,
     v.apellido_materno,
+
     COALESCE(vdb.id_solicitud_client, s.id_solicitud) AS id_solicitud,
     COALESCE(vdb.tipo_cuarto_vuelo, s.room) AS room,
-    ho.nombre as hotel,
+    ho.nombre AS hotel,
     COALESCE(s.is_con_desayuno, hp.is_con_desayuno) AS incluye_desayuno,
     COALESCE(vdb.costo_total, s.total) AS total_solicitud,
     COALESCE(vdb.created_at, s.created_at) AS created_at_solicitud,
+
     'hotel' AS type
+
 FROM solicitudes s
+
 LEFT JOIN vw_details_booking vdb
     ON vdb.id_solicitud_client = s.id_solicitud
+
 LEFT JOIN hospedajes hp
     ON hp.id_hospedaje = vdb.id_relacion
+
+LEFT JOIN (
+    SELECT
+        vh.id_hospedaje,
+        GROUP_CONCAT(
+            DISTINCT TRIM(
+                CONCAT_WS(
+                    ' ',
+                    v.primer_nombre,
+                    v.segundo_nombre,
+                    v.apellido_paterno,
+                    v.apellido_materno
+                )
+            )
+            SEPARATOR ', '
+        ) AS acompanantes
+    FROM viajeros_hospedajes vh
+    INNER JOIN viajeros v
+        ON v.id_viajero = vh.id_viajero
+    WHERE vh.is_principal = 0
+    GROUP BY vh.id_hospedaje
+) acomp
+    ON acomp.id_hospedaje = hp.id_hospedaje
+
 LEFT JOIN hoteles ho
-    ON  ho.id_hotel = COALESCE(vdb.id_proveedor_service, s.id_hotel)
+    ON ho.id_hotel = COALESCE(vdb.id_proveedor_service, s.id_hotel)
+
 LEFT JOIN viajeros v
     ON v.id_viajero = COALESCE(vdb.id_viajero, s.id_viajero)
+
 WHERE (
-	vdb.estado <> 'cancelada'
-    OR
-    s.status << "canceled"
-) AND s.id_solicitud = ?`,
+    vdb.estado <> 'cancelada'
+    OR s.status <> 'canceled'
+)
+AND s.id_solicitud = ?
+
+GROUP BY s.id_solicitud;`,
         [id],
       );
 
