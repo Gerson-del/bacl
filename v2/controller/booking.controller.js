@@ -99,7 +99,7 @@ GROUP BY s.id_solicitud;`,
 
       return {
         ...rest,
-        acompañantes: (acompanantes || []).join(","),
+        acompañantes: Array.isArray(acompanantes) ? acompanantes.join(",") : (acompanantes ?? ""),
         huesped: [
           primer_nombre,
           segundo_nombre,
