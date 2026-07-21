@@ -52,6 +52,7 @@ const { errorHandler } = require("./middleware/errorHandler");
 
 const { checkApiKey } = require("./middleware/auth");
 const v1Router = require("./api/v1/router/general");
+const v2Router = require("./v2/router/index");
 const cors = require("cors");
 const morgan = require("morgan");
 
@@ -162,6 +163,17 @@ app.use(
     next();
   },
   v1Router,
+);
+
+// 7. Rutas de la API v2
+app.use(
+  "/v2",
+  checkApiKey,
+  (req, res, next) => {
+    res.setHeader("Cache-Control", "no-cache");
+    next();
+  },
+  v2Router,
 );
 
 app.get("/probando", async (req, res) => {

@@ -1,0 +1,62 @@
+const pagoProveedoresReservasService = require("../../api/modules/pagoProveedores/reservas/pagoProveedoresReservas.service");
+
+const getReservas = async (req, res) => {
+  const {
+    notas_internas,
+    codigo_confirmacion,
+    fecha_inicio_creacion,
+    fecha_fin_creacion,
+    estado_solicitud,
+    estado_facturacion,
+    cliente,
+    proveedor,
+    forma_pago,
+    tipo_negociacion,
+    fecha_solicitud_inicio,
+    fecha_solicitud_fin,
+    comentarios_ops,
+    comentarios_cxp,
+    servicio,
+    rfc,
+    uuid,
+    page,
+    length,
+  } = req.query;
+
+  try {
+    const data = await pagoProveedoresReservasService.getAll({
+      notas_internas,
+      codigo_confirmacion,
+      fecha_inicio_creacion,
+      fecha_fin_creacion,
+      estado_solicitud,
+      estado_facturacion,
+      cliente,
+      proveedor,
+      forma_pago,
+      tipo_negociacion,
+      fecha_solicitud_inicio,
+      fecha_solicitud_fin,
+      comentarios_ops,
+      comentarios_cxp,
+      servicio,
+      rfc,
+      uuid,
+      page,
+      length,
+    });
+
+    return res.status(200).json({
+      message: "Reservas de pago a proveedor obtenidas correctamente",
+      data,
+    });
+  } catch (error) {
+    console.error("Error en getReservas:", error);
+    return res.status(error.statusCode ?? 500).json({
+      error: "Error al obtener reservas de pago a proveedor",
+      details: error.message || error,
+    });
+  }
+};
+
+module.exports = { getReservas };
